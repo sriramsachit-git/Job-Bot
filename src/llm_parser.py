@@ -53,7 +53,7 @@ class JobParser:
     EXTRACTION_PROMPT = """Extract job posting details from this content. Return valid JSON only.
 
 Required JSON schema:
-{
+{{
     "job_title": "string - exact job title",
     "company": "string - company name",
     "location": "string or null - job location",
@@ -68,7 +68,7 @@ Required JSON schema:
     "qualifications": ["array of key qualifications - max 5"],
     "benefits": ["array of benefits - max 5"],
     "job_summary": "string - 2-3 sentence summary"
-}
+}}
 
 Important:
 - For yoe_required: Extract MINIMUM years. "3-5 years" = 3, "5+ years" = 5, "entry level" = 0
