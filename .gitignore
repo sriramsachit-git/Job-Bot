@@ -15,7 +15,10 @@ data/*.db
 data/*.csv
 data/*.json
 data/resumes/
+data/resumes/*.log
+data/resumes/*.tex
 !data/.gitkeep
+data/*.yaml
 
 # Logs
 logs/*.log
