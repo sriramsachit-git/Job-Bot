@@ -1,5 +1,5 @@
 """
-SQLite database storage for job postings.
+SQLite database storage for job postings and resumes.
 Handles persistence, deduplication, and querying.
 """
 
@@ -20,7 +20,7 @@ console = Console()
 
 class JobDatabase:
     """
-    SQLite database manager for job postings.
+    SQLite database manager for job postings and resumes.
     
     Provides CRUD operations, deduplication, filtering,
     and export functionality.
@@ -52,6 +52,7 @@ class JobDatabase:
     
     def _create_tables(self):
         """Create database tables if they don't exist."""
+        # Jobs table
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS jobs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,11 +82,29 @@ class JobDatabase:
             )
         """)
         
+        # Resumes table
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS resumes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER,
+                job_title TEXT,
+                company TEXT,
+                job_url TEXT,
+                resume_location TEXT,
+                selected_projects TEXT,
+                tex_path TEXT,
+                pdf_path TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (job_id) REFERENCES jobs(id)
+            )
+        """)
+        
         # Create indexes for common queries
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_company ON jobs(company)")
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_yoe ON jobs(yoe_required)")
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_score ON jobs(relevance_score)")
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_applied ON jobs(applied)")
+        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_resume_job ON resumes(job_id)")
         
         self.conn.commit()
         logger.debug("Database tables created/verified")
@@ -249,7 +268,16 @@ class JobDatabase:
         """Get a single job by ID."""
         self.cursor.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
         row = self.cursor.fetchone()
-        return dict(row) if row else None
+        if row:
+            job = dict(row)
+            for field in ["required_skills", "nice_to_have_skills", "responsibilities", "qualifications", "benefits"]:
+                if job.get(field):
+                    try:
+                        job[field] = json.loads(job[field])
+                    except json.JSONDecodeError:
+                        job[field] = []
+            return job
+        return None
     
     def update_job(self, job_id: int, updates: Dict[str, Any]) -> bool:
         """Update job fields."""
@@ -294,6 +322,72 @@ class JobDatabase:
             logger.error(f"Delete error: {e}")
             return False
     
+    # Resume methods
+    def save_resume(self, resume_data: Dict[str, Any]) -> int:
+        """Save generated resume to database."""
+        projects = resume_data.get("selected_projects", [])
+        if isinstance(projects, list):
+            projects = json.dumps(projects)
+        
+        try:
+            self.cursor.execute("""
+                INSERT INTO resumes (
+                    job_id, job_title, company, job_url, 
+                    resume_location, selected_projects, tex_path, pdf_path
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                resume_data.get("job_id"),
+                resume_data.get("job_title"),
+                resume_data.get("company"),
+                resume_data.get("job_url"),
+                resume_data.get("resume_location"),
+                projects,
+                resume_data.get("tex_path"),
+                resume_data.get("pdf_path")
+            ))
+            self.conn.commit()
+            return self.cursor.lastrowid
+        except sqlite3.Error as e:
+            logger.error(f"Error saving resume: {e}")
+            return -1
+    
+    def get_resume_for_job(self, job_id: int) -> Optional[Dict[str, Any]]:
+        """Get resume linked to a job."""
+        self.cursor.execute("SELECT * FROM resumes WHERE job_id = ?", (job_id,))
+        row = self.cursor.fetchone()
+        return dict(row) if row else None
+    
+    def get_all_resumes(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Get all generated resumes with job info."""
+        self.cursor.execute("""
+            SELECT r.*, j.relevance_score 
+            FROM resumes r 
+            LEFT JOIN jobs j ON r.job_id = j.id
+            ORDER BY r.created_at DESC
+            LIMIT ?
+        """, (limit,))
+        return [dict(row) for row in self.cursor.fetchall()]
+    
+    def get_resumes_summary(self) -> List[Dict[str, Any]]:
+        """Get summary of all resumes for display."""
+        self.cursor.execute("""
+            SELECT 
+                r.id,
+                r.job_title,
+                r.company,
+                r.job_url,
+                r.resume_location,
+                r.selected_projects,
+                r.tex_path,
+                r.pdf_path,
+                r.created_at,
+                j.relevance_score
+            FROM resumes r
+            LEFT JOIN jobs j ON r.job_id = j.id
+            ORDER BY r.created_at DESC
+        """)
+        return [dict(row) for row in self.cursor.fetchall()]
+    
     def export_csv(
         self,
         filepath: str,
@@ -332,6 +426,10 @@ class JobDatabase:
         # Saved count
         self.cursor.execute("SELECT COUNT(*) FROM jobs WHERE saved = TRUE")
         stats["saved_count"] = self.cursor.fetchone()[0]
+        
+        # Resume count
+        self.cursor.execute("SELECT COUNT(*) FROM resumes")
+        stats["resume_count"] = self.cursor.fetchone()[0]
         
         # Top companies
         self.cursor.execute("""
