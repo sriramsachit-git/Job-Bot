@@ -14,7 +14,7 @@ build/
 data/*.db
 data/*.csv
 data/*.json
-data/resumes/*.tex
+data/resumes/
 !data/.gitkeep
 
 # Logs
