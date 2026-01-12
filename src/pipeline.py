@@ -4,7 +4,7 @@ Coordinates search, extraction, parsing, filtering, and storage.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from rich.console import Console
 from rich.logging import RichHandler
@@ -83,7 +83,8 @@ class JobSearchPipeline:
             "filtered": 0,
             "saved": 0,
             "skipped": 0,
-            "started_at": datetime.now().isoformat()
+            "started_at": datetime.now().isoformat(),
+            "new_jobs": []
         }
         
         try:
@@ -109,6 +110,24 @@ class JobSearchPipeline:
             summary["extracted"] = sum(1 for e in extracted if e["success"])
             console.print(f"[green]Extracted {summary['extracted']}/{len(urls)} pages[/green]\n")
             
+            # Store failed extractions
+            failed_count = 0
+            for i, result in enumerate(extracted):
+                if not result["success"]:
+                    search_result = search_results[i] if i < len(search_results) else {}
+                    self.db.save_unextracted_job(
+                        url=result["url"],
+                        title=search_result.get("title"),
+                        snippet=search_result.get("snippet"),
+                        source_domain=self.extractor.get_domain(result["url"]),
+                        methods_attempted=[result.get("method", "unknown")],
+                        error_message=result.get("error")
+                    )
+                    failed_count += 1
+            
+            if failed_count > 0:
+                console.print(f"[yellow]⚠️  {failed_count} failed extractions saved for retry[/yellow]\n")
+            
             # Step 3: Parse with LLM
             console.print("[bold cyan]🤖 Step 3: Parsing job details with AI...[/bold cyan]")
             jobs = self.parser.parse_batch(extracted)
@@ -127,10 +146,20 @@ class JobSearchPipeline:
             
             # Step 5: Save to database
             console.print("[bold cyan]💾 Step 5: Saving to database...[/bold cyan]")
+            # Get timestamp just before saving (with small buffer for safety)
+            before_time = datetime.now() - timedelta(seconds=2)
+            before_timestamp = before_time.isoformat()
+            
             saved, skipped = self.db.save_batch(filtered)
             summary["saved"] = saved
             summary["skipped"] = skipped
             console.print(f"[green]Saved {saved} new jobs, skipped {skipped} duplicates[/green]\n")
+            
+            # Get newly saved jobs (created after the before_timestamp)
+            if saved > 0:
+                new_jobs = self.db.get_new_jobs_since(before_timestamp)
+                # Limit to the number we actually saved
+                summary["new_jobs"] = new_jobs[:saved]
             
             # Step 6: Export to CSV
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

@@ -99,12 +99,30 @@ class JobDatabase:
             )
         """)
         
+        # Unextracted jobs table
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS unextracted_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                url TEXT UNIQUE NOT NULL,
+                title TEXT,
+                snippet TEXT,
+                source_domain TEXT,
+                extraction_methods_attempted TEXT,
+                error_message TEXT,
+                retry_count INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
         # Create indexes for common queries
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_company ON jobs(company)")
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_yoe ON jobs(yoe_required)")
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_score ON jobs(relevance_score)")
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_applied ON jobs(applied)")
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_resume_job ON resumes(job_id)")
+        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_unextracted_url ON unextracted_jobs(url)")
+        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_unextracted_retry ON unextracted_jobs(retry_count)")
         
         self.conn.commit()
         logger.debug("Database tables created/verified")
@@ -411,6 +429,35 @@ class JobDatabase:
         logger.info(f"Exported {len(jobs)} jobs to {filepath}")
         console.print(f"[green]Exported {len(jobs)} jobs to {filepath}[/green]")
     
+    def get_new_jobs_since(self, since_timestamp: str) -> List[Dict[str, Any]]:
+        """
+        Get jobs created after a specific timestamp.
+        
+        Args:
+            since_timestamp: ISO format timestamp string
+            
+        Returns:
+            List of job dictionaries
+        """
+        query = "SELECT * FROM jobs WHERE created_at > ? ORDER BY relevance_score DESC, created_at DESC"
+        self.cursor.execute(query, (since_timestamp,))
+        rows = self.cursor.fetchall()
+        
+        # Convert to list of dicts
+        jobs = []
+        for row in rows:
+            job = dict(row)
+            # Parse JSON fields
+            for field in ["required_skills", "nice_to_have_skills", "responsibilities", "qualifications", "benefits"]:
+                if job.get(field):
+                    try:
+                        job[field] = json.loads(job[field])
+                    except json.JSONDecodeError:
+                        job[field] = []
+            jobs.append(job)
+        
+        return jobs
+    
     def get_stats(self) -> Dict[str, Any]:
         """Get database statistics."""
         stats = {}
@@ -456,6 +503,109 @@ class JobDatabase:
         stats["avg_yoe"] = round(self.cursor.fetchone()[0] or 0, 1)
         
         return stats
+    
+    def save_unextracted_job(
+        self,
+        url: str,
+        title: Optional[str] = None,
+        snippet: Optional[str] = None,
+        source_domain: Optional[str] = None,
+        methods_attempted: Optional[List[str]] = None,
+        error_message: Optional[str] = None
+    ) -> bool:
+        """
+        Save a job that failed extraction to the unextracted_jobs table.
+        
+        Args:
+            url: URL that failed extraction
+            title: Job title if available from search snippet
+            snippet: Search snippet text
+            source_domain: Domain of the job posting
+            methods_attempted: List of extraction methods that were tried
+            error_message: Error message from last attempt
+            
+        Returns:
+            True if saved, False if duplicate or error
+        """
+        try:
+            methods_str = json.dumps(methods_attempted) if methods_attempted else None
+            
+            self.cursor.execute("""
+                INSERT OR REPLACE INTO unextracted_jobs (
+                    url, title, snippet, source_domain, 
+                    extraction_methods_attempted, error_message, 
+                    retry_count, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 
+                    COALESCE((SELECT retry_count FROM unextracted_jobs WHERE url = ?), 0) + 1,
+                    CURRENT_TIMESTAMP
+                )
+            """, (
+                url, title, snippet, source_domain,
+                methods_str, error_message, url
+            ))
+            
+            self.conn.commit()
+            
+            if self.cursor.rowcount > 0:
+                logger.debug(f"Saved unextracted job: {url}")
+                return True
+            else:
+                return False
+                
+        except sqlite3.Error as e:
+            logger.error(f"Database error saving unextracted job: {e}")
+            return False
+    
+    def get_unextracted_jobs(
+        self,
+        limit: int = 100,
+        max_retries: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get unextracted jobs that can be retried.
+        
+        Args:
+            limit: Maximum number of results
+            max_retries: Maximum retry count to include (None = all)
+            
+        Returns:
+            List of unextracted job dictionaries
+        """
+        query = "SELECT * FROM unextracted_jobs WHERE 1=1"
+        params = []
+        
+        if max_retries is not None:
+            query += " AND retry_count < ?"
+            params.append(max_retries)
+        
+        query += " ORDER BY retry_count ASC, created_at DESC LIMIT ?"
+        params.append(limit)
+        
+        self.cursor.execute(query, params)
+        rows = self.cursor.fetchall()
+        
+        jobs = []
+        for row in rows:
+            job = dict(row)
+            # Parse JSON fields
+            if job.get("extraction_methods_attempted"):
+                try:
+                    job["extraction_methods_attempted"] = json.loads(job["extraction_methods_attempted"])
+                except json.JSONDecodeError:
+                    job["extraction_methods_attempted"] = []
+            jobs.append(job)
+        
+        return jobs
+    
+    def delete_unextracted_job(self, url: str) -> bool:
+        """Delete an unextracted job (e.g., after successful extraction)."""
+        try:
+            self.cursor.execute("DELETE FROM unextracted_jobs WHERE url = ?", (url,))
+            self.conn.commit()
+            return self.cursor.rowcount > 0
+        except sqlite3.Error as e:
+            logger.error(f"Delete error: {e}")
+            return False
     
     def close(self):
         """Close database connection."""

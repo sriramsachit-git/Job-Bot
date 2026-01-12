@@ -9,6 +9,7 @@ import time
 from typing import Optional, Tuple, List, Dict, Any
 from urllib.parse import urlparse
 import requests
+from bs4 import BeautifulSoup
 from tenacity import retry, stop_after_attempt, wait_exponential
 from rich.console import Console
 from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn
@@ -26,6 +27,7 @@ class ContentExtractor:
     Automatically routes extraction requests to the most appropriate method:
     - Jina Reader: Fast, works for most sites
     - Playwright: For JavaScript-heavy sites (Greenhouse, Lever, etc.)
+    - BeautifulSoup: Fallback for simple HTML pages
     
     Includes fallback logic if primary method fails.
     """
@@ -200,6 +202,80 @@ class ContentExtractor:
             logger.error(f"Playwright extraction failed for {url}: {e}")
             return None
     
+    @retry(
+        stop=stop_after_attempt(2),
+        wait=wait_exponential(multiplier=1, min=1, max=5)
+    )
+    def extract_with_beautifulsoup(self, url: str, timeout: int = 15) -> Optional[str]:
+        """
+        Extract content using BeautifulSoup HTML parsing.
+        
+        Lightweight fallback method for simple HTML pages.
+        No JavaScript execution, just HTML parsing.
+        
+        Args:
+            url: URL to extract
+            timeout: Request timeout in seconds
+            
+        Returns:
+            Extracted text content or None if failed
+        """
+        try:
+            logger.debug(f"Fetching via BeautifulSoup: {url}")
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            
+            response = requests.get(url, headers=headers, timeout=timeout)
+            response.raise_for_status()
+            
+            # Parse HTML
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # Remove script and style elements
+            for script in soup(["script", "style", "nav", "header", "footer"]):
+                script.decompose()
+            
+            # Try each selector until we find good content
+            content = None
+            for selector in self.JOB_SELECTORS:
+                try:
+                    elements = soup.select(selector)
+                    if elements:
+                        # Get text from all matching elements
+                        text = ' '.join([elem.get_text(separator=' ', strip=True) for elem in elements])
+                        if len(text) > 500:
+                            content = text
+                            logger.debug(f"Found content with selector: {selector}")
+                            break
+                except Exception:
+                    continue
+            
+            if content:
+                logger.debug(f"BeautifulSoup extraction successful: {len(content)} chars")
+                return content
+            
+            # Fallback: get main content or body text
+            main = soup.find('main') or soup.find('article') or soup.find('body')
+            if main:
+                text = main.get_text(separator=' ', strip=True)
+                # Clean up excessive whitespace
+                text = ' '.join(text.split())
+                if len(text) > 500:
+                    logger.debug(f"BeautifulSoup fallback extraction successful: {len(text)} chars")
+                    return text
+            
+            logger.warning(f"BeautifulSoup found insufficient content")
+            return None
+                
+        except requests.RequestException as e:
+            logger.warning(f"BeautifulSoup extraction failed for {url}: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"BeautifulSoup parsing error for {url}: {e}")
+            return None
+    
     def smart_extract(self, url: str) -> Tuple[Optional[str], str]:
         """
         Intelligently extract content using the best method for the URL.
@@ -227,6 +303,11 @@ class ContentExtractor:
             content = self.extract_with_jina(url)
             if content:
                 return content, "jina"
+            
+            # Final fallback to BeautifulSoup
+            content = self.extract_with_beautifulsoup(url)
+            if content:
+                return content, "beautifulsoup"
         
         # Route 2: Other sites -> Jina first
         else:
@@ -238,6 +319,11 @@ class ContentExtractor:
             content = self.extract_with_playwright(url)
             if content:
                 return content, "playwright"
+            
+            # Final fallback to BeautifulSoup
+            content = self.extract_with_beautifulsoup(url)
+            if content:
+                return content, "beautifulsoup"
         
         logger.warning(f"All extraction methods failed for {url}")
         return None, "failed"

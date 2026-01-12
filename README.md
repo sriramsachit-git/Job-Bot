@@ -12,11 +12,14 @@ This pipeline automates the tedious process of searching job boards, extracting 
 ## 🎯 Features
 
 - **🔍 Smart Search** - Google Custom Search API with Boolean query support
-- **📄 Multi-Source Extraction** - Handles JS-rendered sites (Greenhouse, Lever) and static pages
+- **📄 Multi-Source Extraction** - Three extraction methods: Jina Reader, Playwright, and BeautifulSoup
 - **🤖 AI-Powered Parsing** - GPT-4o-mini extracts structured job data with high accuracy
 - **🎯 Relevance Scoring** - Scores jobs based on YOE, skills, location, and preferences
-- **💾 Persistent Storage** - SQLite database with deduplication
+- **💾 Persistent Storage** - SQLite database with deduplication and failed extraction tracking
 - **📊 CSV Export** - Export results for spreadsheet analysis
+- **📄 Resume Generation** - AI-powered tailored resume generation with PDF output
+- **🌐 Web Frontend** - Flask-based dashboard accessible from any device on your network
+- **📋 Unextracted Jobs Tracking** - Never lose a job posting - failed extractions saved for retry
 - **⚡ Rate Limiting** - Built-in retry logic and respectful rate limiting
 
 ---
@@ -27,10 +30,13 @@ This pipeline automates the tedious process of searching job boards, extracting 
 - [Installation](#-installation)
 - [Configuration](#-configuration)
 - [Usage](#-usage)
+- [Resume Generation](#-resume-generation)
+- [Web Frontend](#-web-frontend)
 - [Customization](#-customization)
 - [API Keys Setup](#-api-keys-setup)
 - [Supported Job Sites](#-supported-job-sites)
 - [Architecture](#-architecture)
+- [Testing](#-testing)
 - [Troubleshooting](#-troubleshooting)
 - [Contributing](#-contributing)
 - [License](#-license)
@@ -58,6 +64,13 @@ cp .env.example .env
 
 # 5. Run daily search
 python main.py --daily
+
+# 6. (Optional) Install LaTeX for PDF resume generation
+# macOS: brew install --cask mactex
+# Ubuntu/Debian: sudo apt-get install texlive-latex-base texlive-latex-extra
+
+# 7. (Optional) Start web frontend
+python web_app.py --host 0.0.0.0 --port 5000
 ```
 
 ---
@@ -99,12 +112,24 @@ python main.py --daily
    playwright install chromium
    ```
 
-5. **Set up configuration**
+5. **Install LaTeX for PDF generation (optional but recommended)**
+   ```bash
+   # macOS
+   brew install --cask mactex
+   
+   # Ubuntu/Debian/Jetson Nano
+   sudo apt-get install texlive-latex-base texlive-latex-extra
+   
+   # Verify installation
+   python check_pdf_setup.py
+   ```
+
+6. **Set up configuration**
    ```bash
    cp .env.example .env
    ```
 
-6. **Add your API keys to `.env`** (see [API Keys Setup](#-api-keys-setup))
+7. **Add your API keys to `.env`** (see [API Keys Setup](#-api-keys-setup))
 
 ---
 
@@ -248,6 +273,162 @@ pipeline.cleanup()
 
 ---
 
+## 📄 Resume Generation
+
+The pipeline includes AI-powered resume generation that tailors your resume to each job posting.
+
+### Quick Start
+
+```bash
+# Generate resumes for top 10 jobs (interactive)
+python generate_resumes.py
+
+# Auto-select top 3 projects for each job
+python generate_resumes.py --auto
+
+# Generate for specific job ID
+python generate_resumes.py --job-id 42
+
+# Generate for top 5 jobs with min score 40
+python generate_resumes.py --top 5 --min-score 40
+
+# List all generated resumes
+python generate_resumes.py --list-resumes
+```
+
+### Setup
+
+1. **Create resume configuration** (`data/resume_config.yaml`):
+   ```yaml
+   contact:
+     name: "Your Name"
+     email: "your.email@example.com"
+     phone: "xxx-xxx-xxxx"
+     linkedin: "linkedin.com/in/yourprofile"
+     github: "github.com/yourusername"
+   
+   default_location: "San Diego, CA"
+   approved_locations:
+     - "San Diego, CA"
+     - "Remote"
+   
+   education:
+     degree: "MS in Data Science"
+     school: "University Name"
+     gpa: "3.8"
+     graduation: "2023"
+     coursework: ["Machine Learning", "Deep Learning", "Statistics"]
+   
+   experience:
+     - title: "ML Engineer"
+       company: "Company Name"
+       dates: "2022 - Present"
+       bullets:
+         - "Built ML pipelines..."
+         - "Deployed models..."
+   
+   skills:
+     languages: ["Python", "SQL", "R"]
+     ml_frameworks: ["PyTorch", "TensorFlow", "Scikit-learn"]
+     cloud_devops: ["AWS", "Docker", "Kubernetes"]
+     ai_tools: ["LangChain", "HuggingFace", "OpenAI"]
+     domains: ["NLP", "Computer Vision", "Recommendation Systems"]
+   ```
+
+2. **Create projects file** (`data/projects.json`):
+   ```json
+   {
+     "projects": [
+       {
+         "id": "project1",
+         "name": "RAG System",
+         "one_liner": "Built a retrieval-augmented generation system",
+         "skills": ["Python", "LangChain", "OpenAI", "Vector DB"],
+         "metrics": "Improved accuracy by 30%",
+         "bullets": [
+           "Implemented semantic search with embeddings",
+           "Built prompt engineering pipeline"
+         ]
+       }
+     ]
+   }
+   ```
+
+### Features
+
+- **AI-Powered Project Matching**: Automatically ranks your projects by relevance to each job
+- **Location Matching**: Automatically adjusts resume location based on job location
+- **Tailored Summaries**: Generates job-specific professional summaries
+- **PDF Output**: Compiles LaTeX to professional PDF resumes
+- **Batch Processing**: Generate multiple resumes at once
+
+### Integration with Main Pipeline
+
+Resume generation is now integrated into the main pipeline flow. After running a job search, you'll see:
+
+1. All new jobs displayed with YOE and key details
+2. Prompt to generate resumes for new jobs
+3. Automatic project selection and resume generation
+
+---
+
+## 🌐 Web Frontend
+
+A Flask-based web dashboard to view and manage your job search pipeline from any device on your network. Perfect for running on Jetson Nano and viewing on your PC.
+
+### Starting the Web Server
+
+```bash
+# Run on all interfaces (accessible from network)
+python web_app.py --host 0.0.0.0 --port 5000
+
+# Run on specific port
+python web_app.py --host 0.0.0.0 --port 8080
+
+# Development mode (local only)
+python web_app.py --host 127.0.0.1 --port 5000
+```
+
+### Accessing from PC
+
+1. **Find the server IP address:**
+   ```bash
+   # On the server (Jetson Nano)
+   hostname -I
+   ```
+
+2. **Open in browser:**
+   ```
+   http://<server-ip>:5000
+   ```
+   Example: `http://192.168.1.100:5000`
+
+### Features
+
+- **Dashboard**: View statistics and overview
+- **Job Browser**: Filter jobs by score, YOE, company, location, remote status
+- **Unextracted Jobs**: Monitor failed extractions with retry counts
+- **Resume Management**: View and download generated PDF resumes
+- **Mark Applied**: Track which jobs you've applied to
+- **Auto-refresh**: Updates every 30 seconds
+
+### API Endpoints
+
+The web app provides a REST API:
+
+- `GET /api/stats` - Database statistics
+- `GET /api/jobs` - Get jobs with filters
+- `GET /api/jobs/<id>` - Get specific job
+- `POST /api/jobs/<id>/mark-applied` - Mark job as applied
+- `GET /api/unextracted` - Get unextracted jobs
+- `GET /api/resumes` - Get generated resumes
+- `GET /api/resumes/<id>/pdf` - Download resume PDF
+- `POST /api/search/run` - Run a job search
+
+See [WEB_FRONTEND.md](WEB_FRONTEND.md) for detailed documentation.
+
+---
+
 ## 🎨 Customization
 
 ### Adding New Job Sites
@@ -296,6 +477,24 @@ JOB_SELECTORS = [
     # ... existing selectors
 ]
 ```
+
+### Extraction Methods
+
+The pipeline uses three extraction methods with automatic fallback:
+
+1. **Jina Reader** (Primary for most sites)
+   - Fast, works for static HTML pages
+   - Converts web pages to clean markdown
+
+2. **Playwright** (For JavaScript-heavy sites)
+   - Renders JavaScript content
+   - Used for Greenhouse, Lever, Workday, etc.
+
+3. **BeautifulSoup** (Final fallback)
+   - Lightweight HTML parsing
+   - Used when Jina and Playwright both fail
+
+Failed extractions are automatically saved to the `unextracted_jobs` table for later retry.
 
 ---
 
@@ -411,11 +610,41 @@ The pipeline supports 30+ ATS (Applicant Tracking System) platforms:
 |--------|-------------|
 | `config.py` | Configuration, API keys, user profile |
 | `search.py` | Google Custom Search API wrapper |
-| `extractor.py` | Web content extraction (Jina + Playwright) |
+| `extractor.py` | Web content extraction (Jina + Playwright + BeautifulSoup) |
+| `resume_generator.py` | AI-powered resume generation with PDF output |
+| `web_app.py` | Flask web frontend for remote access |
 | `llm_parser.py` | GPT-4o-mini job parsing |
 | `filters.py` | Relevance scoring and filtering |
 | `storage.py` | SQLite database operations |
 | `pipeline.py` | Main orchestrator |
+
+---
+
+## 🧪 Testing
+
+The project includes comprehensive test coverage:
+
+```bash
+# Run all tests
+pytest
+
+# Run specific test file
+pytest tests/test_extractor_extended.py
+
+# Run with coverage
+pytest --cov=src tests/
+
+# Run specific test class
+pytest tests/test_storage_extended.py::TestStorageExtended
+```
+
+### Test Coverage
+
+- **Extractor Tests**: Jina, Playwright, and BeautifulSoup extraction methods
+- **Storage Tests**: Database operations, unextracted jobs tracking
+- **Pipeline Tests**: End-to-end pipeline integration
+- **Parser Tests**: LLM job parsing accuracy
+- **Filter Tests**: Relevance scoring logic
 
 ---
 
@@ -461,6 +690,20 @@ playwright install chromium
   print(breakdown)
   ```
 
+**6. PDF generation fails**
+```bash
+# Check if pdflatex is installed
+python check_pdf_setup.py
+
+# Install LaTeX if needed (see Installation section)
+```
+
+**7. Web frontend not accessible from PC**
+- Ensure `--host 0.0.0.0` is used (not `127.0.0.1`)
+- Check firewall settings on server
+- Verify server IP address with `hostname -I`
+- Check that port is not blocked
+
 ### Debug Mode
 
 ```bash
@@ -478,6 +721,7 @@ python main.py --daily
 | Search speed | ~1 sec per 10 URLs |
 | Extraction (Jina) | ~1-2 sec per page |
 | Extraction (Playwright) | ~3-5 sec per page |
+| Extraction (BeautifulSoup) | ~0.5-1 sec per page |
 | LLM parsing | ~0.5 sec per job |
 | **Total for 50 jobs** | **~3-5 minutes** |
 
@@ -509,11 +753,19 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
+## 📚 Additional Documentation
+
+- [WEB_FRONTEND.md](WEB_FRONTEND.md) - Web frontend guide
+- [QUICK_START.md](QUICK_START.md) - Quick start guide
+- [CHANGES_SUMMARY.md](CHANGES_SUMMARY.md) - Recent changes and features
+
 ## 🙏 Acknowledgments
 
 - [Jina AI](https://jina.ai/) for the Reader API
 - [OpenAI](https://openai.com/) for GPT-4o-mini
 - [Playwright](https://playwright.dev/) for browser automation
+- [BeautifulSoup](https://www.crummy.com/software/BeautifulSoup/) for HTML parsing
+- [Flask](https://flask.palletsprojects.com/) for web framework
 - [Rich](https://rich.readthedocs.io/) for beautiful CLI output
 
 ---

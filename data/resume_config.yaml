@@ -1,0 +1,74 @@
+# Resume Configuration
+# Edit this file with your actual information
+
+contact:
+  name: "Sriram Sachitchunduri"
+  email: "your@email.com"
+  phone: "xxx-xxx-xxxx"
+  linkedin: "linkedin.com/in/yourprofile"
+  github: "github.com/yourusername"
+
+# Your default location (used when job location doesn't match approved list)
+default_location: "San Diego, CA"
+
+# Locations you're willing to show on resume
+# If job posting location matches any of these, it will be used
+approved_locations:
+  - "San Diego, CA"
+  - "San Francisco, CA"
+  - "San Jose, CA"
+  - "Los Angeles, CA"
+  - "Seattle, WA"
+  - "New York, NY"
+  - "Austin, TX"
+  - "Remote"
+
+# Mapping for common variations in job postings
+location_mapping:
+  "bay area": "San Francisco, CA"
+  "sf": "San Francisco, CA"
+  "san francisco bay area": "San Francisco, CA"
+  "silicon valley": "San Jose, CA"
+  "nyc": "New York, NY"
+  "new york city": "New York, NY"
+  "greater seattle": "Seattle, WA"
+  "seattle area": "Seattle, WA"
+  "la": "Los Angeles, CA"
+  "socal": "San Diego, CA"
+  "southern california": "San Diego, CA"
+
+education:
+  degree: "MS in Data Science"
+  school: "Drexel University"
+  gpa: "3.8"
+  graduation: "Expected 2025"
+  coursework:
+    - "Machine Learning"
+    - "Deep Learning"
+    - "Natural Language Processing"
+    - "Statistical Learning"
+
+experience:
+  - title: "AI Engineer Intern"
+    company: "Freelance"
+    dates: "Aug 2024 - Present"
+    bullets:
+      - "Built production ML pipelines using Python and PyTorch for client projects"
+      - "Developed RAG systems with LangChain achieving 40% improvement in response accuracy"
+      - "Implemented automated data pipelines processing 10K+ records daily"
+
+  - title: "Data Scientist"
+    company: "RK Financial Management Consultants"
+    dates: "Jan 2022 - Dec 2023"
+    bullets:
+      - "Built predictive models improving forecast accuracy by 25% using ensemble methods"
+      - "Developed automated reporting dashboards reducing manual effort by 15 hours/week"
+      - "Collaborated with stakeholders to translate business requirements into ML solutions"
+
+skills:
+  languages: ["Python", "SQL", "R"]
+  ml_frameworks: ["PyTorch", "TensorFlow", "Scikit-learn", "Keras"]
+  data_tools: ["Pandas", "NumPy", "Spark", "Airflow"]
+  cloud_devops: ["AWS", "Docker", "Kubernetes", "Git", "MLflow"]
+  ai_tools: ["LangChain", "OpenAI API", "Hugging Face", "RAG"]
+  domains: ["Machine Learning", "Deep Learning", "NLP", "Computer Vision", "LLMs"]

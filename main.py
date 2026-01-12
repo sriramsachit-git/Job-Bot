@@ -23,8 +23,12 @@ import sys
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
+from rich.prompt import Confirm
 
 from src.pipeline import JobSearchPipeline
+from src.storage import JobDatabase
+from src.resume_generator import ResumeGenerator
+from src.config import config
 
 console = Console()
 
@@ -47,6 +51,134 @@ def display_results(summary: dict):
     
     if summary.get("export_path"):
         console.print(f"\n[dim]📁 Results exported to: {summary['export_path']}[/dim]")
+
+
+def display_new_jobs(new_jobs: list):
+    """Display newly saved jobs with YOE and key details."""
+    if not new_jobs:
+        return
+    
+    console.print("\n")
+    console.print(Panel.fit(
+        f"[bold cyan]🆕 {len(new_jobs)} New Jobs Found[/bold cyan]",
+        border_style="cyan"
+    ))
+    
+    table = Table(title="New Jobs Details", show_header=True)
+    table.add_column("#", style="cyan", width=3)
+    table.add_column("Title", style="green", width=30)
+    table.add_column("Company", style="yellow", width=20)
+    table.add_column("Location", width=20)
+    table.add_column("YOE", style="magenta", width=6, justify="center")
+    table.add_column("Score", style="blue", width=6, justify="center")
+    table.add_column("Key Skills", width=40)
+    
+    for i, job in enumerate(new_jobs, 1):
+        # Get key skills (first 3-4 required skills)
+        required_skills = job.get("required_skills", [])
+        if isinstance(required_skills, str):
+            try:
+                import json
+                required_skills = json.loads(required_skills)
+            except:
+                required_skills = []
+        
+        key_skills = ", ".join(required_skills[:4]) if required_skills else "N/A"
+        if len(key_skills) > 40:
+            key_skills = key_skills[:37] + "..."
+        
+        location = job.get("location", "N/A")
+        if location and len(location) > 20:
+            location = location[:17] + "..."
+        
+        title = job.get("title", "N/A")
+        if len(title) > 30:
+            title = title[:27] + "..."
+        
+        company = job.get("company", "N/A")
+        if len(company) > 20:
+            company = company[:17] + "..."
+        
+        table.add_row(
+            str(i),
+            title,
+            company,
+            location,
+            str(job.get("yoe_required", 0)),
+            str(job.get("relevance_score", 0)),
+            key_skills
+        )
+    
+    console.print("\n")
+    console.print(table)
+    console.print("\n")
+
+
+def generate_resumes_for_new_jobs(new_jobs: list, pipeline: JobSearchPipeline):
+    """Generate resumes for new jobs."""
+    if not new_jobs:
+        return
+    
+    try:
+        console.print("\n[bold cyan]📄 Initializing Resume Generator...[/bold cyan]\n")
+        
+        generator = ResumeGenerator(
+            config_path="data/resume_config.yaml",
+            projects_path="data/projects.json"
+        )
+        
+        # Convert job dicts to format expected by generator
+        jobs_for_generation = []
+        for job in new_jobs:
+            # Ensure all fields are properly formatted
+            jobs_for_generation.append({
+                'id': job.get('id'),
+                'title': job.get('title', ''),
+                'company': job.get('company', ''),
+                'url': job.get('url', ''),
+                'location': job.get('location'),
+                'required_skills': job.get('required_skills', []),
+                'nice_to_have_skills': job.get('nice_to_have_skills', []),
+                'responsibilities': job.get('responsibilities', []),
+                'yoe_required': job.get('yoe_required', 0),
+                'remote': job.get('remote'),
+                'source_domain': job.get('source_domain', '')
+            })
+        
+        console.print(f"[green]Processing {len(jobs_for_generation)} jobs for resume generation...[/green]\n")
+        
+        # Generate recommendations
+        recommendations = generator.generate_recommendations(jobs_for_generation)
+        
+        # Display recommendations
+        generator.display_recommendations(recommendations)
+        
+        # Auto-select top 3 projects for each job
+        console.print("\n[yellow]Auto-selecting top 3 projects for each job...[/yellow]")
+        recommendations = generator.auto_select_top3(recommendations)
+        
+        # Generate resumes
+        results = generator.generate_resumes(recommendations)
+        
+        # Save to database
+        for result in results:
+            if result["success"]:
+                pipeline.db.save_resume(result)
+        
+        # Display results
+        generator.display_results(results)
+        
+        # Summary
+        successful = sum(1 for r in results if r["success"])
+        console.print(f"\n[bold green]✓ Generated {successful}/{len(results)} resumes[/bold green]")
+        
+    except FileNotFoundError as e:
+        console.print(f"[red]Configuration file not found: {e}[/red]")
+        console.print("[dim]Make sure data/resume_config.yaml and data/projects.json exist[/dim]")
+    except Exception as e:
+        console.print(f"[red]Error generating resumes: {e}[/red]")
+        import traceback
+        traceback.print_exc()
 
 
 def display_stats(stats: dict):
@@ -173,6 +305,14 @@ Examples:
             console.print("[bold green]🚀 Running daily job search...[/bold green]\n")
             summary = pipeline.run_daily()
             display_results(summary)
+            
+            # Display new jobs and prompt for resume generation
+            new_jobs = summary.get("new_jobs", [])
+            if new_jobs:
+                display_new_jobs(new_jobs)
+                if Confirm.ask("\n[bold yellow]Would you like to generate resumes for these new jobs?[/bold yellow]", default=True):
+                    generate_resumes_for_new_jobs(new_jobs, pipeline)
+            
             return 0
         
         # Custom search mode
@@ -186,12 +326,28 @@ Examples:
                 min_score=args.min_score
             )
             display_results(summary)
+            
+            # Display new jobs and prompt for resume generation
+            new_jobs = summary.get("new_jobs", [])
+            if new_jobs:
+                display_new_jobs(new_jobs)
+                if Confirm.ask("\n[bold yellow]Would you like to generate resumes for these new jobs?[/bold yellow]", default=True):
+                    generate_resumes_for_new_jobs(new_jobs, pipeline)
+            
             return 0
         
         # Default: run daily search
         console.print("[bold green]🚀 Running daily job search (default)...[/bold green]\n")
         summary = pipeline.run_daily()
         display_results(summary)
+        
+        # Display new jobs and prompt for resume generation
+        new_jobs = summary.get("new_jobs", [])
+        if new_jobs:
+            display_new_jobs(new_jobs)
+            if Confirm.ask("\n[bold yellow]Would you like to generate resumes for these new jobs?[/bold yellow]", default=True):
+                generate_resumes_for_new_jobs(new_jobs, pipeline)
+        
         return 0
         
     except KeyboardInterrupt:
