@@ -90,7 +90,7 @@ DEFAULT_JOB_SITES: List[str] = [
 
 # User profile for job filtering - CUSTOMIZE THIS
 USER_PROFILE: Dict[str, Any] = {
-    "max_yoe": 3,
+    "max_yoe": 5,
     "required_skills": [
         "python", 
         "sql", 
