@@ -103,10 +103,58 @@ class JobSearchPipeline:
                 console.print("[yellow]No results found. Try different keywords.[/yellow]")
                 return summary
             
+            # Step 1.5: Early filtering to save credits (before extraction)
+            console.print("[bold cyan]🔍 Step 1.5: Early filtering (saving credits)...[/bold cyan]")
+            filtered_results = []
+            skipped_count = 0
+            skipped_reasons = {"keywords": 0, "location": 0}
+            
+            for result in search_results:
+                title = result.get("title", "")
+                snippet = result.get("snippet", "")
+                display_link = result.get("displayLink", "")
+                
+                # Check if should skip (checks both keywords and location)
+                should_skip = self.filter.should_skip_early(title, snippet, display_link)
+                
+                if should_skip:
+                    skipped_count += 1
+                    # Determine reason for skipping
+                    if self.filter._title_has_excluded_keywords(title) or \
+                       (snippet and any(kw in snippet.lower() for kw in self.filter.exclude_keywords)):
+                        skipped_reasons["keywords"] += 1
+                    else:
+                        skipped_reasons["location"] += 1
+                    logger.debug(f"Skipping early: {title}")
+                    continue
+                
+                filtered_results.append(result)
+            
+            if skipped_count > 0:
+                reasons = []
+                if skipped_reasons["keywords"] > 0:
+                    reasons.append(f"{skipped_reasons['keywords']} excluded keywords")
+                if skipped_reasons["location"] > 0:
+                    reasons.append(f"{skipped_reasons['location']} non-USA locations")
+                reason_text = " + ".join(reasons)
+                console.print(f"[yellow]Skipped {skipped_count} jobs early ({reason_text}) - saved credits![/yellow]")
+            
+            if not filtered_results:
+                console.print("[yellow]All jobs filtered out by early filtering.[/yellow]")
+                return summary
+            
+            console.print(f"[green]Proceeding with {len(filtered_results)}/{len(search_results)} jobs[/green]\n")
+            
             # Step 2: Extract content
             console.print("[bold cyan]📄 Step 2: Extracting job content...[/bold cyan]")
-            urls = [r["link"] for r in search_results]
-            extracted = self.extractor.extract_batch(urls)
+            urls = [r["link"] for r in filtered_results]
+            # Limit batch size to prevent overwhelming the system
+            max_extraction_batch = min(50, len(urls))  # Process max 50 at a time
+            extracted = self.extractor.extract_batch(
+                urls[:max_extraction_batch],
+                delay=1.0,
+                max_batch_size=max_extraction_batch
+            )
             summary["extracted"] = sum(1 for e in extracted if e["success"])
             console.print(f"[green]Extracted {summary['extracted']}/{len(urls)} pages[/green]\n")
             
@@ -114,7 +162,8 @@ class JobSearchPipeline:
             failed_count = 0
             for i, result in enumerate(extracted):
                 if not result["success"]:
-                    search_result = search_results[i] if i < len(search_results) else {}
+                    # Use filtered_results instead of search_results
+                    search_result = filtered_results[i] if i < len(filtered_results) else {}
                     self.db.save_unextracted_job(
                         url=result["url"],
                         title=search_result.get("title"),
@@ -140,9 +189,10 @@ class JobSearchPipeline:
             
             # Step 4: Filter and score
             console.print("[bold cyan]🎯 Step 4: Filtering relevant jobs...[/bold cyan]")
-            filtered = self.filter.filter_jobs(jobs, min_score=min_score)
+            # Apply location filtering again (in case early filtering missed something)
+            filtered = self.filter.filter_jobs(jobs, min_score=min_score, usa_only=True)
             summary["filtered"] = len(filtered)
-            console.print(f"[green]Found {len(filtered)} relevant matches (score >= {min_score})[/green]\n")
+            console.print(f"[green]Found {len(filtered)} relevant matches (score >= {min_score}, USA/Remote only)[/green]\n")
             
             # Step 5: Save to database
             console.print("[bold cyan]💾 Step 5: Saving to database...[/bold cyan]")

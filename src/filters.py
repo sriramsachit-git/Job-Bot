@@ -87,6 +87,107 @@ class JobFilter:
         title_lower = title.lower()
         return any(kw in title_lower for kw in self.exclude_keywords)
     
+    def _is_location_usa_or_remote(self, text: str) -> bool:
+        """
+        Check if text indicates USA location or remote work.
+        
+        Args:
+            text: Text to check (title, snippet, etc.)
+            
+        Returns:
+            True if location appears to be USA or remote, False otherwise
+        """
+        if not text:
+            return True  # If no location info, allow it (will be checked later)
+        
+        text_lower = text.lower()
+        
+        # Check for remote indicators
+        remote_keywords = ["remote", "work from home", "wfh", "hybrid", "anywhere"]
+        if any(kw in text_lower for kw in remote_keywords):
+            return True
+        
+        # Check for USA indicators
+        usa_keywords = [
+            "united states", "usa", "u.s.", "us", "america",
+            "san francisco", "new york", "seattle", "austin", "boston",
+            "chicago", "los angeles", "san diego", "san jose", "denver",
+            "atlanta", "dallas", "houston", "philadelphia", "phoenix",
+            "miami", "portland", "nashville", "detroit", "minneapolis",
+            "california", "texas", "new york", "florida", "washington",
+            "massachusetts", "illinois", "colorado", "georgia", "north carolina",
+            "virginia", "arizona", "tennessee", "oregon", "michigan"
+        ]
+        if any(kw in text_lower for kw in usa_keywords):
+            return True
+        
+        # Check for non-USA country indicators (exclude these)
+        non_usa_countries = [
+            "canada", "toronto", "vancouver", "montreal", "ottawa",
+            "uk", "united kingdom", "london", "england", "britain",
+            "germany", "berlin", "munich", "france", "paris",
+            "india", "bangalore", "mumbai", "delhi", "hyderabad",
+            "china", "beijing", "shanghai", "singapore", "australia",
+            "sydney", "melbourne", "japan", "tokyo", "netherlands",
+            "amsterdam", "sweden", "stockholm", "switzerland", "zurich",
+            "spain", "madrid", "italy", "rome", "milan", "brazil",
+            "sao paulo", "mexico", "mexico city", "poland", "warsaw",
+            "ireland", "dublin", "israel", "tel aviv", "south korea",
+            "seoul", "taiwan", "taipei", "hong kong", "philippines",
+            "manila", "indonesia", "jakarta", "thailand", "bangkok",
+            "vietnam", "ho chi minh", "malaysia", "kuala lumpur"
+        ]
+        
+        # If we find non-USA country indicators, skip it
+        if any(country in text_lower for country in non_usa_countries):
+            logger.debug(f"Non-USA location detected: {text}")
+            return False
+        
+        # If no location info found, allow it (will be checked after parsing)
+        return True
+    
+    def should_skip_early(self, title: str, snippet: str = "", display_link: str = "") -> bool:
+        """
+        Early filtering before extraction/parsing to save credits.
+        
+        Checks title and snippet for:
+        1. Excluded keywords (senior, staff, etc.)
+        2. Location (only USA or remote allowed)
+        
+        This is called BEFORE expensive extraction/parsing operations.
+        
+        Args:
+            title: Job title from search results
+            snippet: Search snippet text (optional)
+            display_link: Display link/domain (optional)
+            
+        Returns:
+            True if job should be skipped
+        """
+        if not title:
+            return False
+        
+        # Check 1: Excluded keywords in title
+        if self._title_has_excluded_keywords(title):
+            logger.debug(f"Skipping early: {title} (excluded keyword in title)")
+            return True
+        
+        # Check 2: Excluded keywords in snippet
+        if snippet:
+            snippet_lower = snippet.lower()
+            if any(kw in snippet_lower for kw in self.exclude_keywords):
+                logger.debug(f"Skipping early: {title} (excluded keyword in snippet)")
+                return True
+        
+        # Check 3: Location filtering (only USA or remote)
+        # Combine all text sources for location check
+        location_text = f"{title} {snippet} {display_link}".strip()
+        if not self._is_location_usa_or_remote(location_text):
+            logger.debug(f"Skipping early: {title} (non-USA location)")
+            return True
+        
+        return False
+    
     def _location_matches(self, location: str) -> bool:
         """Check if job location matches preferences."""
         if not location:
@@ -159,7 +260,8 @@ class JobFilter:
     def filter_jobs(
         self,
         jobs: List[ParsedJob],
-        min_score: int = 30
+        min_score: int = 30,
+        usa_only: bool = True
     ) -> List[Tuple[ParsedJob, int]]:
         """
         Filter and score jobs.
@@ -167,16 +269,36 @@ class JobFilter:
         Args:
             jobs: List of ParsedJob objects
             min_score: Minimum score to include (default 30)
+            usa_only: Only include USA or remote jobs (default True)
             
         Returns:
             List of (job, score) tuples, sorted by score descending
         """
         scored_jobs = []
+        location_filtered = 0
         
         for job in jobs:
+            # Location filtering (if enabled)
+            if usa_only and job.location:
+                if not self._is_location_usa_or_remote(job.location):
+                    location_filtered += 1
+                    logger.debug(f"Filtered out: {job.job_title} @ {job.company} - Location: {job.location}")
+                    continue
+            
+            # Also check if job is remote (always allow remote)
+            if usa_only and job.remote:
+                # Remote jobs are always allowed
+                pass
+            elif usa_only and not job.location:
+                # If no location specified, allow it (might be remote)
+                pass
+            
             score = self.calculate_relevance_score(job)
             if score >= min_score:
                 scored_jobs.append((job, score))
+        
+        if location_filtered > 0:
+            logger.info(f"Location filtered: {location_filtered} non-USA jobs removed")
         
         # Sort by score descending
         scored_jobs.sort(key=lambda x: x[1], reverse=True)
