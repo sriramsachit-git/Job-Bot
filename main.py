@@ -28,7 +28,8 @@ from rich.prompt import Confirm
 from src.pipeline import JobSearchPipeline
 from src.storage import JobDatabase
 from src.resume_generator import ResumeGenerator
-from src.config import config
+from src.config import config, DEFAULT_JOB_SITES
+from src.usage_tracker import get_historical_usage
 
 console = Console()
 
@@ -163,7 +164,21 @@ def generate_resumes_for_new_jobs(new_jobs: list, pipeline: JobSearchPipeline):
         # Save to database
         for result in results:
             if result["success"]:
-                pipeline.db.save_resume(result)
+                resume_id = pipeline.db.save_resume(result)
+                # Save resume changes tracking
+                if resume_id > 0:
+                    job_id = result.get("job_id")
+                    location = result.get("resume_location")
+                    skills_added = result.get("skills_added", [])
+                    projects = result.get("selected_projects", [])
+                    if job_id:
+                        pipeline.db.save_resume_changes(
+                            resume_id=resume_id,
+                            job_id=job_id,
+                            location=location,
+                            skills_added=skills_added,
+                            projects=projects
+                        )
         
         # Display results
         generator.display_results(results)
@@ -282,6 +297,43 @@ Examples:
         action="store_true",
         help="Reduce output verbosity"
     )
+    parser.add_argument(
+        "--per-site", "-ps",
+        type=int,
+        metavar="N",
+        help="Search each site individually with N results per site"
+    )
+    parser.add_argument(
+        "--comprehensive", "-c",
+        action="store_true",
+        help="Comprehensive search: each keyword × each site (maximum coverage)"
+    )
+    parser.add_argument(
+        "--usage-report", "-u",
+        action="store_true",
+        help="Show usage statistics for last 7 days"
+    )
+    parser.add_argument(
+        "--titles", "-t",
+        nargs="+",
+        default=["AI engineer", "ML engineer", "machine learning engineer", "data scientist", "applied scientist"],
+        help="Job titles to search (used with --comprehensive)"
+    )
+    parser.add_argument(
+        "--no-pre-filter",
+        action="store_true",
+        help="Disable pre-filtering (send all jobs to LLM)"
+    )
+    parser.add_argument(
+        "--skill-stats",
+        action="store_true",
+        help="Show skill frequency statistics"
+    )
+    parser.add_argument(
+        "--pre-filter-stats",
+        action="store_true",
+        help="Show pre-filter statistics"
+    )
     
     args = parser.parse_args()
     
@@ -294,16 +346,110 @@ Examples:
     try:
         pipeline = JobSearchPipeline()
         
+        # Handle no-pre-filter flag
+        if args.no_pre_filter:
+            pipeline.pre_filter = None  # Disable pre-filtering
+        
         # Stats mode
         if args.stats:
             stats = pipeline.get_stats()
             display_stats(stats)
             return 0
         
+        # Usage report mode
+        if args.usage_report:
+            from rich.table import Table
+            
+            stats = get_historical_usage(days=7)
+            
+            table = Table(title="📊 Last 7 Days Usage Summary")
+            table.add_column("Metric", style="cyan")
+            table.add_column("Value", style="green", justify="right")
+            
+            table.add_row("Pipeline Runs", str(stats.get("reports_count", 0)))
+            table.add_row("Google Queries", str(stats.get("google_queries", 0)))
+            table.add_row("OpenAI Tokens", f"{stats.get('openai_tokens', 0):,}")
+            table.add_row("Jobs Saved", str(stats.get("jobs_saved", 0)))
+            table.add_row("Google Cost", f"${stats.get('google_cost', 0):.4f}")
+            table.add_row("OpenAI Cost", f"${stats.get('openai_cost', 0):.4f}")
+            table.add_row("[bold]Total Cost[/bold]", f"[bold]${stats.get('total_cost', 0):.4f}[/bold]")
+            
+            console.print(table)
+            return 0
+        
+        # Skill stats mode
+        if args.skill_stats:
+            stats = pipeline.db.get_skill_stats_summary()
+            console.print("\n[bold cyan]📊 Skill Frequency Statistics[/bold cyan]")
+            console.print(f"Unique skills tracked: {stats['unique_skills']}")
+            console.print(f"Total occurrences: {stats['total_occurrences']}")
+            console.print("\n[bold]By Category:[/bold]")
+            for cat in stats['by_category']:
+                console.print(f"  {cat['job_title_category']}: {cat['skill_count']} skills, {cat['total']} occurrences")
+            
+            console.print("\n[bold]Top 20 Skills:[/bold]")
+            top_skills = pipeline.db.get_top_skills_by_category(limit=20)
+            for skill in top_skills:
+                console.print(f"  {skill['skill_name']}: {skill['times_seen']} ({skill['job_title_category']})")
+            return 0
+        
+        # Pre-filter stats mode
+        if args.pre_filter_stats:
+            stats = pipeline.db.get_pre_filter_stats()
+            console.print("\n[bold cyan]📋 Pre-Filter Statistics[/bold cyan]")
+            for item in stats['by_reason']:
+                console.print(f"  {item['filter_reason']}: {item['count']} jobs")
+            return 0
+        
         # Daily search mode
         if args.daily:
             console.print("[bold green]🚀 Running daily job search...[/bold green]\n")
             summary = pipeline.run_daily()
+            display_results(summary)
+            
+            # Display new jobs and prompt for resume generation
+            new_jobs = summary.get("new_jobs", [])
+            if new_jobs:
+                display_new_jobs(new_jobs)
+                if Confirm.ask("\n[bold yellow]Would you like to generate resumes for these new jobs?[/bold yellow]", default=True):
+                    generate_resumes_for_new_jobs(new_jobs, pipeline)
+            
+            return 0
+        
+        # Comprehensive search mode
+        if args.comprehensive:
+            console.print(f"[bold green]🚀 Comprehensive search: {len(args.titles)} titles × {len(DEFAULT_JOB_SITES)} sites[/bold green]\n")
+            summary = pipeline.run(
+                keywords=args.titles,
+                sites=args.sites or DEFAULT_JOB_SITES,
+                num_results=args.num_results,
+                date_restrict=args.date_restrict,
+                min_score=args.min_score,
+                comprehensive=True
+            )
+            display_results(summary)
+            
+            # Display new jobs and prompt for resume generation
+            new_jobs = summary.get("new_jobs", [])
+            if new_jobs:
+                display_new_jobs(new_jobs)
+                if Confirm.ask("\n[bold yellow]Would you like to generate resumes for these new jobs?[/bold yellow]", default=True):
+                    generate_resumes_for_new_jobs(new_jobs, pipeline)
+            
+            return 0
+        
+        # Per-site search mode
+        if args.per_site:
+            keyword = args.keywords[0] if args.keywords else "AI engineer"
+            console.print(f"[bold green]🚀 Per-site search: '{keyword}' with {args.per_site} results per site[/bold green]\n")
+            summary = pipeline.run(
+                keywords=[keyword],
+                sites=args.sites or DEFAULT_JOB_SITES,
+                num_results=args.num_results,
+                date_restrict=args.date_restrict,
+                min_score=args.min_score,
+                per_site=args.per_site
+            )
             display_results(summary)
             
             # Display new jobs and prompt for resume generation

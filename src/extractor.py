@@ -331,7 +331,9 @@ class ContentExtractor:
     def extract_batch(
         self,
         urls: List[str],
-        delay: float = 1.0
+        delay: float = 1.0,
+        max_batch_size: Optional[int] = None,
+        parallel: bool = False
     ) -> List[Dict[str, Any]]:
         """
         Extract content from multiple URLs.
@@ -339,12 +341,24 @@ class ContentExtractor:
         Args:
             urls: List of URLs to extract
             delay: Delay between requests in seconds
+            max_batch_size: Maximum number of URLs to process (None = all)
+            parallel: Use parallel processing (experimental)
             
         Returns:
             List of dicts with: url, content, method, success, error
         """
+        # Limit batch size if specified
+        if max_batch_size and len(urls) > max_batch_size:
+            logger.info(f"Limiting batch to {max_batch_size} URLs (from {len(urls)})")
+            urls = urls[:max_batch_size]
+        
         results: List[Dict[str, Any]] = []
         
+        # Parallel extraction (experimental)
+        if parallel and len(urls) > 1:
+            return self._extract_batch_parallel(urls, delay)
+        
+        # Sequential extraction (default)
         with Progress(
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -390,5 +404,62 @@ class ContentExtractor:
         # Log summary
         successful = sum(1 for r in results if r["success"])
         console.print(f"[green]Extracted: {successful}/{len(urls)} URLs[/green]")
+        
+        return results
+    
+    def _extract_batch_parallel(self, urls: List[str], delay: float) -> List[Dict[str, Any]]:
+        """Extract content in parallel using ThreadPoolExecutor."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        results: List[Dict[str, Any]] = []
+        max_workers = min(5, len(urls))  # Limit concurrent requests
+        
+        with Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            console=console
+        ) as progress:
+            task = progress.add_task("Extracting content (parallel)...", total=len(urls))
+            
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_url = {
+                    executor.submit(self.smart_extract, url): url 
+                    for url in urls
+                }
+                
+                for future in as_completed(future_to_url):
+                    url = future_to_url[future]
+                    try:
+                        content, method = future.result()
+                        results.append({
+                            "url": url,
+                            "content": content,
+                            "method": method,
+                            "success": content is not None,
+                            "error": None
+                        })
+                        if content:
+                            progress.update(task, description=f"✓ Extracted ({method})")
+                    except Exception as e:
+                        logger.error(f"Error extracting {url}: {e}")
+                        results.append({
+                            "url": url,
+                            "content": None,
+                            "method": "error",
+                            "success": False,
+                            "error": str(e)
+                        })
+                    
+                    progress.advance(task)
+                    time.sleep(delay)  # Rate limiting
+        
+        # Sort results to match input order
+        url_to_result = {r["url"]: r for r in results}
+        results = [url_to_result[url] for url in urls if url in url_to_result]
+        
+        successful = sum(1 for r in results if r["success"])
+        console.print(f"[green]Extracted: {successful}/{len(urls)} URLs (parallel)[/green]")
         
         return results

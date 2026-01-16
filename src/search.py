@@ -4,7 +4,9 @@ Uses the official Google API Python client library.
 """
 
 import logging
-from typing import List, Dict, Optional, Any
+import time
+from datetime import datetime
+from typing import List, Dict, Optional, Any, Tuple
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
@@ -212,3 +214,190 @@ class GoogleJobSearch:
             "totalResults": response.get("searchInformation", {}).get("totalResults", 0),
             "searchTime": response.get("searchInformation", {}).get("searchTime", 0)
         }
+    
+    def search_per_site(
+        self,
+        keyword: str,
+        sites: Optional[List[str]] = None,
+        results_per_site: int = 10,
+        date_restrict: str = "d1"
+    ) -> Tuple[List[Dict[str, str]], Dict[str, Any]]:
+        """
+        Search one keyword across multiple sites individually.
+        
+        Args:
+            keyword: Single job title keyword to search
+            sites: List of job sites (defaults to DEFAULT_JOB_SITES)
+            results_per_site: Max results per site
+            date_restrict: Date filter
+            
+        Returns:
+            Tuple of (results_list, usage_stats)
+        """
+        sites = sites or DEFAULT_JOB_SITES
+        all_results = []
+        
+        usage_stats = {
+            "started_at": datetime.now().isoformat(),
+            "total_queries": 0,
+            "successful_queries": 0,
+            "failed_queries": 0,
+            "results_per_site": {},
+            "total_results_raw": 0,
+            "total_results_unique": 0,
+            "query_log": []
+        }
+        
+        console.print(f"[cyan]Per-site search: '{keyword}' on {len(sites)} sites[/cyan]\n")
+        
+        for i, site in enumerate(sites, 1):
+            query_info = {
+                "keyword": keyword,
+                "site": site,
+                "timestamp": datetime.now().isoformat(),
+                "success": False,
+                "results_count": 0,
+                "error": None
+            }
+            
+            try:
+                query = self.build_query([keyword], sites=[site])
+                results = self.search(query, date_restrict, num_results=results_per_site)
+                
+                all_results.extend(results)
+                query_info["success"] = True
+                query_info["results_count"] = len(results)
+                usage_stats["successful_queries"] += 1
+                usage_stats["results_per_site"][site] = len(results)
+                
+                console.print(f"[{i}/{len(sites)}] {site}: {len(results)} results")
+                
+            except Exception as e:
+                query_info["error"] = str(e)
+                usage_stats["failed_queries"] += 1
+                logger.warning(f"Failed: '{keyword}' on {site}: {e}")
+            
+            usage_stats["total_queries"] += 1
+            usage_stats["query_log"].append(query_info)
+            
+            if i < len(sites):
+                time.sleep(1)  # Rate limiting
+        
+        # Deduplicate
+        seen = set()
+        unique = []
+        for r in all_results:
+            if r['link'] not in seen:
+                seen.add(r['link'])
+                unique.append(r)
+        
+        usage_stats["total_results_raw"] = len(all_results)
+        usage_stats["total_results_unique"] = len(unique)
+        usage_stats["completed_at"] = datetime.now().isoformat()
+        usage_stats["duplicates_removed"] = len(all_results) - len(unique)
+        
+        console.print(f"\n[green]✓ Completed {usage_stats['successful_queries']}/{usage_stats['total_queries']} queries[/green]")
+        console.print(f"[green]✓ Found {len(unique)} unique URLs ({len(all_results)} raw, {len(all_results) - len(unique)} duplicates)[/green]\n")
+        
+        return unique, usage_stats
+    
+    def search_all_comprehensive(
+        self,
+        keywords: List[str],
+        sites: Optional[List[str]] = None,
+        results_per_query: int = 10,
+        date_restrict: str = "d1"
+    ) -> Tuple[List[Dict[str, str]], Dict[str, Any]]:
+        """
+        Comprehensive search: each keyword × each site.
+        
+        Args:
+            keywords: List of job titles to search
+            sites: List of job sites (defaults to DEFAULT_JOB_SITES)
+            results_per_query: Max results per keyword-site combination
+            date_restrict: Date filter
+            
+        Returns:
+            Tuple of (results_list, usage_stats)
+        """
+        sites = sites or DEFAULT_JOB_SITES
+        all_results = []
+        
+        usage_stats = {
+            "started_at": datetime.now().isoformat(),
+            "total_queries": 0,
+            "successful_queries": 0,
+            "failed_queries": 0,
+            "results_per_site": {},
+            "results_per_keyword": {},
+            "total_results_raw": 0,
+            "total_results_unique": 0,
+            "query_log": []
+        }
+        
+        total_combinations = len(keywords) * len(sites)
+        console.print(f"[cyan]Comprehensive search: {len(keywords)} keywords × {len(sites)} sites = {total_combinations} queries[/cyan]\n")
+        
+        query_count = 0
+        for keyword in keywords:
+            usage_stats["results_per_keyword"][keyword] = 0
+            
+            for site in sites:
+                query_count += 1
+                console.print(f"[{query_count}/{total_combinations}] '{keyword}' on {site}...")
+                
+                query_info = {
+                    "keyword": keyword,
+                    "site": site,
+                    "timestamp": datetime.now().isoformat(),
+                    "success": False,
+                    "results_count": 0,
+                    "error": None
+                }
+                
+                try:
+                    query = self.build_query([keyword], sites=[site])
+                    results = self.search(query, date_restrict, num_results=results_per_query)
+                    
+                    all_results.extend(results)
+                    
+                    query_info["success"] = True
+                    query_info["results_count"] = len(results)
+                    usage_stats["successful_queries"] += 1
+                    usage_stats["results_per_keyword"][keyword] += len(results)
+                    
+                    if site not in usage_stats["results_per_site"]:
+                        usage_stats["results_per_site"][site] = 0
+                    usage_stats["results_per_site"][site] += len(results)
+                    
+                    logger.info(f"Found {len(results)} results for '{keyword}' on {site}")
+                    
+                except Exception as e:
+                    query_info["error"] = str(e)
+                    usage_stats["failed_queries"] += 1
+                    logger.warning(f"Failed: '{keyword}' on {site}: {e}")
+                
+                usage_stats["total_queries"] += 1
+                usage_stats["query_log"].append(query_info)
+                
+                # Rate limiting
+                if query_count < total_combinations:
+                    time.sleep(1)
+        
+        # Deduplicate
+        seen = set()
+        unique = []
+        for r in all_results:
+            if r['link'] not in seen:
+                seen.add(r['link'])
+                unique.append(r)
+        
+        usage_stats["total_results_raw"] = len(all_results)
+        usage_stats["total_results_unique"] = len(unique)
+        usage_stats["completed_at"] = datetime.now().isoformat()
+        usage_stats["duplicates_removed"] = len(all_results) - len(unique)
+        
+        console.print(f"\n[green]✓ Completed {usage_stats['successful_queries']}/{usage_stats['total_queries']} queries[/green]")
+        console.print(f"[green]✓ Found {len(unique)} unique URLs ({len(all_results)} raw, {len(all_results) - len(unique)} duplicates)[/green]\n")
+        
+        return unique, usage_stats

@@ -36,6 +36,7 @@ class ResumeConfig:
     education: Dict[str, Any]
     experience: List[Dict[str, Any]]
     skills: Dict[str, List[str]]
+    extended_skills: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -106,7 +107,8 @@ class ResumeGenerator:
             location_mapping=data.get('location_mapping', {}),
             education=data.get('education', {}),
             experience=data.get('experience', []),
-            skills=data.get('skills', {})
+            skills=data.get('skills', {}),
+            extended_skills=data.get('extended_skills', [])
         )
     
     def _load_projects(self, path: str) -> List[Project]:
@@ -160,6 +162,80 @@ class ResumeGenerator:
         
         logger.debug(f"Location defaulted: {job_location} -> {self.resume_config.default_location}")
         return self.resume_config.default_location
+    
+    def select_skills_for_job(self, job_skills: List[str]) -> Tuple[Dict[str, List[str]], List[str]]:
+        """
+        Select skills for resume based on JD requirements.
+        
+        Returns:
+            - final_skills: Dict with categorized skills (base + additions)
+            - skills_added: List of skills added from extended_skills
+        """
+        # Start with base skills
+        final_skills = {k: list(v) for k, v in self.resume_config.skills.items()}
+        
+        # Normalize JD skills for matching
+        jd_skills_lower = set(s.lower().strip() for s in job_skills)
+        
+        # Find matching extended skills
+        skills_added = []
+        extended = self.resume_config.extended_skills or []
+        
+        for skill in extended:
+            skill_lower = skill.lower().strip()
+            # Check if this extended skill is mentioned in JD skills
+            # Match if: exact match, or extended skill is substring of JD skill, or JD skill is substring of extended skill
+            skill_matched = False
+            for jd_skill in jd_skills_lower:
+                # Exact match
+                if skill_lower == jd_skill:
+                    skill_matched = True
+                    break
+                # Extended skill appears in JD skill (e.g., "PostgreSQL" in "PostgreSQL/Database")
+                if skill_lower in jd_skill:
+                    skill_matched = True
+                    break
+                # JD skill appears in extended skill (e.g., "GCP" in "Google Cloud Platform (GCP)")
+                if jd_skill in skill_lower:
+                    skill_matched = True
+                    break
+            
+            if skill_matched:
+                skills_added.append(skill)
+                
+                # Add to appropriate category based on skill type
+                if any(kw in skill_lower for kw in ['sql', 'mongo', 'redis', 'pinecone', 'chroma', 'faiss', 'weaviate', 'postgres']):
+                    # Database tools - add to data_tools if exists, otherwise cloud_devops
+                    if 'data_tools' in final_skills:
+                        final_skills['data_tools'].append(skill)
+                    elif 'cloud_devops' in final_skills:
+                        final_skills['cloud_devops'].append(skill)
+                elif any(kw in skill_lower for kw in ['fastapi', 'flask', 'streamlit', 'gradio']):
+                    if 'ai_tools' in final_skills:
+                        final_skills['ai_tools'].append(skill)
+                elif any(kw in skill_lower for kw in ['azure', 'gcp', 'sagemaker', 'databricks', 'vertex', 'terraform', 'prometheus', 'grafana']):
+                    if 'cloud_devops' in final_skills:
+                        final_skills['cloud_devops'].append(skill)
+                elif any(kw in skill_lower for kw in ['dvc', 'mlflow', 'wandb', 'kubeflow', 'bentoml', 'neptune', 'seldon', 'ci/cd', 'github actions']):
+                    if 'cloud_devops' in final_skills:
+                        final_skills['cloud_devops'].append(skill)
+                elif any(kw in skill_lower for kw in ['bert', 'gpt', 'llama', 'transformer', 'vllm', 'ollama', 'anthropic', 'cohere']):
+                    if 'ai_tools' in final_skills:
+                        final_skills['ai_tools'].append(skill)
+                elif any(kw in skill_lower for kw in ['onnx', 'tensorrt', 'triton', 'quantization']):
+                    if 'ai_tools' in final_skills:
+                        final_skills['ai_tools'].append(skill)
+                elif any(kw in skill_lower for kw in ['ray', 'dask', 'polars', 'pyspark', 'kafka']):
+                    if 'data_tools' in final_skills:
+                        final_skills['data_tools'].append(skill)
+                    elif 'cloud_devops' in final_skills:
+                        final_skills['cloud_devops'].append(skill)
+                else:
+                    # Default to ai_tools
+                    if 'ai_tools' in final_skills:
+                        final_skills['ai_tools'].append(skill)
+        
+        return final_skills, skills_added
 
     PROJECT_RANKING_PROMPT = """You are an expert resume consultant. Rank these projects by relevance to the job.
 
@@ -452,8 +528,14 @@ Rank all {num_projects} projects. Scores should be 0-100.
 \end{{document}}
 """
 
-    def _generate_latex(self, rec: ResumeRecommendation) -> str:
-        """Generate LaTeX resume for a recommendation."""
+    def _generate_latex(self, rec: ResumeRecommendation) -> Tuple[str, List[str]]:
+        """
+        Generate LaTeX resume for a recommendation.
+        Returns: (latex_content, skills_added)
+        """
+        # Get dynamic skills based on JD
+        final_skills, skills_added = self.select_skills_for_job(rec.job_skills)
+        
         summary = self._escape_latex(self._generate_summary(rec))
         
         experience_section = ""
@@ -489,11 +571,11 @@ Rank all {num_projects} projects. Scores should be 0-100.
             linkedin=linkedin,
             github=github,
             summary=summary,
-            languages=", ".join(self.resume_config.skills.get('languages', [])),
-            ml_frameworks=", ".join(self.resume_config.skills.get('ml_frameworks', [])),
-            cloud_devops=", ".join(self.resume_config.skills.get('cloud_devops', [])),
-            ai_tools=", ".join(self.resume_config.skills.get('ai_tools', [])),
-            domains=", ".join(self.resume_config.skills.get('domains', [])),
+            languages=", ".join(final_skills.get('languages', [])),
+            ml_frameworks=", ".join(final_skills.get('ml_frameworks', [])),
+            cloud_devops=", ".join(final_skills.get('cloud_devops', [])),
+            ai_tools=", ".join(final_skills.get('ai_tools', [])),
+            domains=", ".join(final_skills.get('domains', [])),
             experience_section=experience_section,
             projects_section=projects_section,
             degree=self._escape_latex(self.resume_config.education.get('degree', '')),
@@ -503,7 +585,7 @@ Rank all {num_projects} projects. Scores should be 0-100.
             coursework=", ".join(self.resume_config.education.get('coursework', []))
         )
         
-        return latex
+        return latex, skills_added
     
     @retry(stop=stop_after_attempt(2), wait=wait_exponential(min=1, max=3))
     def _generate_summary(self, rec: ResumeRecommendation) -> str:
@@ -587,7 +669,7 @@ Return ONLY the summary text, no quotes or labels. Keep it under 50 words."""
             }
             
             try:
-                latex = self._generate_latex(rec)
+                latex, skills_added = self._generate_latex(rec)  # Updated call
                 
                 tex_path = output_path.with_suffix(".tex")
                 tex_path.write_text(latex)
@@ -597,6 +679,7 @@ Return ONLY the summary text, no quotes or labels. Keep it under 50 words."""
                 if pdf_path:
                     result["pdf_path"] = str(pdf_path)
                 
+                result["skills_added"] = skills_added  # Track what was added
                 result["success"] = True
                 console.print(f"  [green]✓ Saved: {tex_path.name}[/green]")
                 

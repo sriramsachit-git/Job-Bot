@@ -181,6 +181,70 @@ def run_search():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/api/pre-filtered')
+def get_pre_filtered():
+    """Get pre-filtered jobs."""
+    try:
+        db = JobDatabase(config.database_path)
+        reason = request.args.get('reason')
+        limit = request.args.get('limit', default=100, type=int)
+        jobs = db.get_pre_filtered_jobs(reason=reason, limit=limit)
+        db.close()
+        return jsonify(jobs)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/pre-filter-stats')
+def get_pre_filter_stats():
+    """Get pre-filter statistics."""
+    try:
+        db = JobDatabase(config.database_path)
+        stats = db.get_pre_filter_stats()
+        db.close()
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/skills')
+def get_skills():
+    """Get skill frequency data."""
+    try:
+        db = JobDatabase(config.database_path)
+        category = request.args.get('category')
+        limit = request.args.get('limit', default=50, type=int)
+        skills = db.get_top_skills_by_category(category=category, limit=limit)
+        db.close()
+        return jsonify(skills)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/skills/<skill_name>')
+def get_skill_distribution(skill_name):
+    """Get distribution of a skill across job categories."""
+    try:
+        db = JobDatabase(config.database_path)
+        distribution = db.get_skill_distribution(skill_name)
+        db.close()
+        return jsonify(distribution)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/skill-stats')
+def get_skill_stats():
+    """Get overall skill statistics."""
+    try:
+        db = JobDatabase(config.database_path)
+        stats = db.get_skill_stats_summary()
+        db.close()
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Job Search Pipeline Web Interface")
     parser.add_argument('--host', default='0.0.0.0', help='Host to bind to (default: 0.0.0.0)')

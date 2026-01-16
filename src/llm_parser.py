@@ -5,7 +5,7 @@ Uses GPT-4o-mini to extract structured data from raw job posting text.
 
 import json
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from pydantic import BaseModel, Field
 from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -100,7 +100,7 @@ Raw job posting content:
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=5)
     )
-    def _call_llm(self, content: str) -> Dict[str, Any]:
+    def _call_llm(self, content: str) -> Tuple[Dict[str, Any], Dict[str, int]]:
         """
         Make LLM API call with retry logic.
         
@@ -108,7 +108,8 @@ Raw job posting content:
             content: Raw job posting content
             
         Returns:
-            Parsed JSON response as dictionary
+            Tuple of (parsed_json, token_usage)
+            token_usage = {"prompt_tokens": N, "completion_tokens": N, "total_tokens": N}
         """
         response = self.client.chat.completions.create(
             model="gpt-4o-mini",
@@ -121,7 +122,13 @@ Raw job posting content:
             max_tokens=1500
         )
         
-        return json.loads(response.choices[0].message.content)
+        token_usage = {
+            "prompt_tokens": response.usage.prompt_tokens,
+            "completion_tokens": response.usage.completion_tokens,
+            "total_tokens": response.usage.total_tokens
+        }
+        
+        return json.loads(response.choices[0].message.content), token_usage
     
     def extract_job_details(
         self,
@@ -145,7 +152,7 @@ Raw job posting content:
         
         try:
             # Call LLM for extraction
-            result = self._call_llm(raw_text)
+            result, token_usage = self._call_llm(raw_text)
             
             # Add source metadata
             result["source_url"] = url
@@ -155,6 +162,7 @@ Raw job posting content:
             job = ParsedJob(**result)
             
             logger.debug(f"Successfully parsed: {job.job_title} @ {job.company}")
+            # Token usage is tracked in parse_batch, not stored on job object
             return job
             
         except json.JSONDecodeError as e:
@@ -167,7 +175,7 @@ Raw job posting content:
     def parse_batch(
         self,
         extracted_contents: List[Dict[str, Any]]
-    ) -> List[ParsedJob]:
+    ) -> Tuple[List[ParsedJob], Dict[str, int]]:
         """
         Parse multiple extracted contents into structured jobs.
         
@@ -175,16 +183,18 @@ Raw job posting content:
             extracted_contents: List of dicts with url and content
             
         Returns:
-            List of successfully parsed ParsedJob objects
+            Tuple of (jobs_list, total_token_usage)
+            total_token_usage = {"prompt_tokens": N, "completion_tokens": N, "total_tokens": N}
         """
         jobs: List[ParsedJob] = []
+        total_tokens = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         
         # Filter to only successful extractions
         valid_contents = [c for c in extracted_contents if c.get("content")]
         
         if not valid_contents:
             logger.warning("No valid content to parse")
-            return jobs
+            return jobs, total_tokens
         
         with Progress(
             TextColumn("[progress.description]{task.description}"),
@@ -199,15 +209,28 @@ Raw job posting content:
                 url = item["url"]
                 content = item["content"]
                 
-                job = self.extract_job_details(content, url)
-                
-                if job:
+                try:
+                    # Call LLM directly to get token usage
+                    result, token_usage = self._call_llm(content)
+                    
+                    # Add source metadata
+                    result["source_url"] = url
+                    result["source_domain"] = self.extractor.get_domain(url)
+                    
+                    # Aggregate token usage
+                    total_tokens["prompt_tokens"] += token_usage.get("prompt_tokens", 0)
+                    total_tokens["completion_tokens"] += token_usage.get("completion_tokens", 0)
+                    total_tokens["total_tokens"] += token_usage.get("total_tokens", 0)
+                    
+                    # Create ParsedJob
+                    job = ParsedJob(**result)
                     jobs.append(job)
                     progress.update(task, description=f"✓ {job.job_title[:30]}...")
-                else:
+                except Exception as e:
+                    logger.error(f"Error parsing {url}: {e}")
                     progress.update(task, description=f"✗ Failed to parse")
                 
                 progress.advance(task)
         
         console.print(f"[green]Parsed: {len(jobs)}/{len(valid_contents)} jobs[/green]")
-        return jobs
+        return jobs, total_tokens

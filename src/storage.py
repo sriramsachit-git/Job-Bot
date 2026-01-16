@@ -115,6 +115,49 @@ class JobDatabase:
             )
         """)
         
+        # Pre-filtered jobs table
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS pre_filtered_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                url TEXT UNIQUE NOT NULL,
+                title TEXT,
+                snippet TEXT,
+                source_domain TEXT,
+                filter_reason TEXT,
+                filter_details TEXT,
+                raw_content_preview TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Skill frequency table
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS skill_frequency (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                skill_name TEXT NOT NULL,
+                job_title_category TEXT NOT NULL,
+                times_seen INTEGER DEFAULT 1,
+                first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(skill_name, job_title_category)
+            )
+        """)
+        
+        # Resume changes table
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS resume_changes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                resume_id INTEGER NOT NULL,
+                job_id INTEGER NOT NULL,
+                location_used TEXT,
+                skills_added TEXT,
+                projects_selected TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (resume_id) REFERENCES resumes(id),
+                FOREIGN KEY (job_id) REFERENCES jobs(id)
+            )
+        """)
+        
         # Create indexes for common queries
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_company ON jobs(company)")
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_yoe ON jobs(yoe_required)")
@@ -123,6 +166,9 @@ class JobDatabase:
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_resume_job ON resumes(job_id)")
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_unextracted_url ON unextracted_jobs(url)")
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_unextracted_retry ON unextracted_jobs(retry_count)")
+        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_prefilter_reason ON pre_filtered_jobs(filter_reason)")
+        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_skill_name ON skill_frequency(skill_name)")
+        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_skill_category ON skill_frequency(job_title_category)")
         
         self.conn.commit()
         logger.debug("Database tables created/verified")
@@ -606,6 +652,155 @@ class JobDatabase:
         except sqlite3.Error as e:
             logger.error(f"Delete error: {e}")
             return False
+    
+    def save_pre_filtered_job(self, url: str, title: str = None, snippet: str = None,
+                              source_domain: str = None, filter_reason: str = None,
+                              filter_details: str = None, raw_content: str = None) -> bool:
+        """Save a job filtered before LLM parsing."""
+        try:
+            content_preview = raw_content[:500] if raw_content else None
+            self.cursor.execute("""
+                INSERT OR IGNORE INTO pre_filtered_jobs 
+                (url, title, snippet, source_domain, filter_reason, filter_details, raw_content_preview)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (url, title, snippet, source_domain, filter_reason, filter_details, content_preview))
+            self.conn.commit()
+            return self.cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Error saving pre-filtered job: {e}")
+            return False
+    
+    def get_pre_filtered_jobs(self, reason: str = None, limit: int = 100) -> List[Dict]:
+        """Get pre-filtered jobs, optionally by reason."""
+        query = "SELECT * FROM pre_filtered_jobs WHERE 1=1"
+        params = []
+        if reason:
+            query += " AND filter_reason = ?"
+            params.append(reason)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        self.cursor.execute(query, params)
+        return [dict(row) for row in self.cursor.fetchall()]
+    
+    def get_pre_filter_stats(self) -> Dict:
+        """Get pre-filter statistics."""
+        self.cursor.execute("""
+            SELECT filter_reason, COUNT(*) as count
+            FROM pre_filtered_jobs GROUP BY filter_reason
+        """)
+        return {"by_reason": [dict(row) for row in self.cursor.fetchall()]}
+    
+    def normalize_job_title_category(self, title: str) -> str:
+        """Normalize job title to category."""
+        title_lower = title.lower()
+        if 'data scientist' in title_lower:
+            return 'Data Scientist'
+        elif 'machine learning' in title_lower or 'ml engineer' in title_lower:
+            return 'ML Engineer'
+        elif 'ai engineer' in title_lower or 'artificial intelligence' in title_lower:
+            return 'AI Engineer'
+        elif 'applied scientist' in title_lower:
+            return 'Applied Scientist'
+        elif 'research scientist' in title_lower or 'research engineer' in title_lower:
+            return 'Research Scientist'
+        elif 'data engineer' in title_lower:
+            return 'Data Engineer'
+        elif 'mlops' in title_lower or 'ml ops' in title_lower:
+            return 'MLOps Engineer'
+        else:
+            return 'Other'
+    
+    def save_skill_frequencies(self, skills: List[str], job_title: str) -> None:
+        """Save/update skill frequencies for a job title category."""
+        category = self.normalize_job_title_category(job_title)
+        
+        for skill in skills:
+            skill_normalized = skill.lower().strip()
+            if not skill_normalized:
+                continue
+            
+            try:
+                self.cursor.execute("""
+                    INSERT INTO skill_frequency (skill_name, job_title_category, times_seen, last_seen)
+                    VALUES (?, ?, 1, CURRENT_TIMESTAMP)
+                    ON CONFLICT(skill_name, job_title_category) DO UPDATE SET
+                        times_seen = times_seen + 1,
+                        last_seen = CURRENT_TIMESTAMP
+                """, (skill_normalized, category))
+            except Exception as e:
+                logger.error(f"Error saving skill frequency: {e}")
+        
+        self.conn.commit()
+    
+    def get_top_skills_by_category(self, category: str = None, limit: int = 50) -> List[Dict]:
+        """Get top skills, optionally filtered by job category."""
+        query = "SELECT skill_name, job_title_category, times_seen, last_seen FROM skill_frequency"
+        params = []
+        
+        if category:
+            query += " WHERE job_title_category = ?"
+            params.append(category)
+        
+        query += " ORDER BY times_seen DESC LIMIT ?"
+        params.append(limit)
+        
+        self.cursor.execute(query, params)
+        return [dict(row) for row in self.cursor.fetchall()]
+    
+    def get_skill_distribution(self, skill_name: str) -> List[Dict]:
+        """Get distribution of a skill across job categories."""
+        self.cursor.execute("""
+            SELECT job_title_category, times_seen 
+            FROM skill_frequency 
+            WHERE skill_name = ?
+            ORDER BY times_seen DESC
+        """, (skill_name.lower(),))
+        return [dict(row) for row in self.cursor.fetchall()]
+    
+    def get_skill_stats_summary(self) -> Dict:
+        """Get overall skill tracking statistics."""
+        self.cursor.execute("SELECT COUNT(DISTINCT skill_name) as unique_skills FROM skill_frequency")
+        unique_skills = self.cursor.fetchone()[0]
+        
+        self.cursor.execute("SELECT SUM(times_seen) as total_occurrences FROM skill_frequency")
+        total_occurrences = self.cursor.fetchone()[0]
+        
+        self.cursor.execute("""
+            SELECT job_title_category, COUNT(*) as skill_count, SUM(times_seen) as total
+            FROM skill_frequency GROUP BY job_title_category ORDER BY total DESC
+        """)
+        by_category = [dict(row) for row in self.cursor.fetchall()]
+        
+        return {
+            "unique_skills": unique_skills,
+            "total_occurrences": total_occurrences,
+            "by_category": by_category
+        }
+    
+    def save_resume_changes(self, resume_id: int, job_id: int, location: str,
+                            skills_added: List[str], projects: List[str]) -> None:
+        """Save changes made to a resume."""
+        try:
+            self.cursor.execute("""
+                INSERT INTO resume_changes (resume_id, job_id, location_used, skills_added, projects_selected)
+                VALUES (?, ?, ?, ?, ?)
+            """, (resume_id, job_id, location, json.dumps(skills_added), json.dumps(projects)))
+            self.conn.commit()
+        except Exception as e:
+            logger.error(f"Error saving resume changes: {e}")
+    
+    def get_frequently_added_skills(self, limit: int = 20) -> List[Dict]:
+        """Get skills most frequently added to resumes from JDs."""
+        self.cursor.execute("SELECT skills_added FROM resume_changes WHERE skills_added IS NOT NULL")
+        
+        skill_counts = {}
+        for row in self.cursor.fetchall():
+            skills = json.loads(row[0]) if row[0] else []
+            for skill in skills:
+                skill_counts[skill] = skill_counts.get(skill, 0) + 1
+        
+        sorted_skills = sorted(skill_counts.items(), key=lambda x: x[1], reverse=True)
+        return [{"skill": s, "times_added": c} for s, c in sorted_skills[:limit]]
     
     def close(self):
         """Close database connection."""

@@ -2,11 +2,11 @@
 # Edit this file with your actual information
 
 contact:
-  name: "Sriram Sachitchunduri"
-  email: "your@email.com"
-  phone: "xxx-xxx-xxxx"
-  linkedin: "linkedin.com/in/yourprofile"
-  github: "github.com/yourusername"
+  name: "Sriram Sachit Chunduri"
+  email: "csriramsachit@gmail.com"
+  phone: "619-436-6443"
+  linkedin: "linkedin.com/in/sriram-chunduri-416a29213"
+  github: "github.com/sriramsachit"
 
 # Your default location (used when job location doesn't match approved list)
 default_location: "San Diego, CA"
@@ -14,8 +14,41 @@ default_location: "San Diego, CA"
 # Locations you're willing to show on resume
 # If job posting location matches any of these, it will be used
 approved_locations:
-  - "San Diego, CA"
+  - "Washington, D.C."
+  - "Alexandria, VA"
+  - "Arlington, VA"
+  - "Charlottesville, VA"
+  - "Richmond, VA"
+  - "New York City, NY"
+  - "Philadelphia, PA "
+  - "Newark, NJ"
+  - "Trenton, NJ"
+  - "New Brunswick, NJ"
+  - "Edison, NJ"
+  - "Jersey City, NJ"
   - "San Francisco, CA"
+  - "Oakland, CA"
+  - "Palo Alto, CA"
+  - "Fremont, CA"
+  - "Sunnyvale, CA"
+  - "Santa Clara, CA"
+  - "San Mateo, CA"
+  - "Dallas, TX"
+  - "Plano, TX"
+  - "Garland, TX"
+  - Irving, TX"
+  - "Fort Worth, TX"
+  - "Frisco, TX"
+  - "McKinney, TX"
+  - "Arlington, TX"
+  - "St. Louis, MO"
+  - "Chesterfield, MO"
+  - "Kirkwood, MO"
+  - "Florissant, MO"
+  - Ballwin, MO"
+  - "Maryland Heights, MO"
+  - "St. Charles, MO"
+  - "O'Fallon, MO"
   - "San Jose, CA"
   - "Los Angeles, CA"
   - "Seattle, WA"
@@ -41,29 +74,30 @@ education:
   degree: "MS in Data Science"
   school: "Drexel University"
   gpa: "3.8"
-  graduation: "Expected 2025"
-  coursework:
-    - "Machine Learning"
-    - "Deep Learning"
-    - "Natural Language Processing"
-    - "Statistical Learning"
+  graduation: "June 2025"
+
+  degree: "Btech in Electronics and Communication Engineering"
+  school: "Vardhhaman College of Engineering"
+  gpa: "3.2"
+  graduation: "Jan 2023"
+
 
 experience:
   - title: "AI Engineer Intern"
-    company: "Freelance"
+    company: "Vanvi Global Solutions"
     dates: "Aug 2024 - Present"
     bullets:
-      - "Built production ML pipelines using Python and PyTorch for client projects"
-      - "Developed RAG systems with LangChain achieving 40% improvement in response accuracy"
-      - "Implemented automated data pipelines processing 10K+ records daily"
+      - ""
+      - ""
+      - ""
 
   - title: "Data Scientist"
     company: "RK Financial Management Consultants"
     dates: "Jan 2022 - Dec 2023"
     bullets:
-      - "Built predictive models improving forecast accuracy by 25% using ensemble methods"
-      - "Developed automated reporting dashboards reducing manual effort by 15 hours/week"
-      - "Collaborated with stakeholders to translate business requirements into ML solutions"
+      - ""
+      - ""
+      - ""
 
 skills:
   languages: ["Python", "SQL", "R"]
@@ -72,3 +106,65 @@ skills:
   cloud_devops: ["AWS", "Docker", "Kubernetes", "Git", "MLflow"]
   ai_tools: ["LangChain", "OpenAI API", "Hugging Face", "RAG"]
   domains: ["Machine Learning", "Deep Learning", "NLP", "Computer Vision", "LLMs"]
+
+# Extended skills that can be added dynamically based on job requirements
+extended_skills:
+  # Databases
+  - "PostgreSQL"
+  - "MongoDB"
+  - "Redis"
+  - "Pinecone"
+  - "ChromaDB"
+  - "Weaviate"
+  - "FAISS"
+  
+  # Web Frameworks
+  - "FastAPI"
+  - "Flask"
+  - "Streamlit"
+  - "Gradio"
+  
+  # MLOps Tools
+  - "DVC"
+  - "Weights & Biases"
+  - "Neptune"
+  - "Kubeflow"
+  - "BentoML"
+  - "Seldon"
+  
+  # Cloud Platforms
+  - "Azure"
+  - "GCP"
+  - "Databricks"
+  - "SageMaker"
+  - "Vertex AI"
+  
+  # Big Data
+  - "Ray"
+  - "Dask"
+  - "Polars"
+  - "PySpark"
+  - "Kafka"
+  
+  # LLM/NLP
+  - "Transformers"
+  - "BERT"
+  - "GPT"
+  - "LLaMA"
+  - "Anthropic API"
+  - "Cohere"
+  - "vLLM"
+  - "Ollama"
+  
+  # Model Optimization
+  - "ONNX"
+  - "TensorRT"
+  - "Triton"
+  - "quantization"
+  
+  # Other
+  - "CI/CD"
+  - "GitHub Actions"
+  - "Terraform"
+  - "Prometheus"
+  - "Grafana"

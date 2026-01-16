@@ -11,15 +11,18 @@ This pipeline automates the tedious process of searching job boards, extracting 
 
 ## 🎯 Features
 
-- **🔍 Smart Search** - Google Custom Search API with Boolean query support
-- **📄 Multi-Source Extraction** - Three extraction methods: Jina Reader, Playwright, and BeautifulSoup
+- **🔍 Smart Search** - Google Custom Search API with Boolean query support, comprehensive matrix search
+- **📄 Multi-Source Extraction** - Three extraction methods: Jina Reader, Playwright, and BeautifulSoup with automatic fallback
 - **🤖 AI-Powered Parsing** - GPT-4o-mini extracts structured job data with high accuracy
+- **💰 Pre-Parse Filtering** - Regex-based filtering saves 20-40% on LLM costs by filtering disqualifying jobs before expensive API calls
+- **📊 Skill Tracking** - Tracks skill demand across job categories (Data Scientist, ML Engineer, AI Engineer, etc.)
 - **🎯 Relevance Scoring** - Scores jobs based on YOE, skills, location, and preferences
 - **💾 Persistent Storage** - SQLite database with deduplication and failed extraction tracking
 - **📊 CSV Export** - Export results for spreadsheet analysis
-- **📄 Resume Generation** - AI-powered tailored resume generation with PDF output
+- **📄 Smart Resume Generation** - AI-powered tailored resume generation with dynamic skill selection and PDF output
 - **🌐 Web Frontend** - Flask-based dashboard accessible from any device on your network
 - **📋 Unextracted Jobs Tracking** - Never lose a job posting - failed extractions saved for retry
+- **📈 Usage Tracking** - Automatic API usage and cost tracking with historical reports
 - **⚡ Rate Limiting** - Built-in retry logic and respectful rate limiting
 
 ---
@@ -237,6 +240,12 @@ python main.py --help
 | `--date-restrict` | `-d` | Date filter (d1/d3/w1/w2/m1) | d1 (last day) |
 | `--min-score` | `-m` | Min relevance score | 30 |
 | `--daily` | | Run daily search | |
+| `--comprehensive` | `-c` | Matrix search: each keyword × each site | |
+| `--per-site` | `-ps` | Search each site individually with N results | |
+| `--no-pre-filter` | | Disable pre-filtering (send all to LLM) | |
+| `--skill-stats` | | Show skill frequency statistics | |
+| `--pre-filter-stats` | | Show pre-filter statistics | |
+| `--usage-report` | `-u` | Show API usage and costs (last 7 days) | |
 | `--stats` | | Show database stats | |
 | `--quiet` | `-q` | Reduce output | |
 
@@ -357,10 +366,12 @@ python generate_resumes.py --list-resumes
 ### Features
 
 - **AI-Powered Project Matching**: Automatically ranks your projects by relevance to each job
+- **Dynamic Skill Selection**: Automatically adds relevant skills from `extended_skills` based on job requirements
 - **Location Matching**: Automatically adjusts resume location based on job location
 - **Tailored Summaries**: Generates job-specific professional summaries
 - **PDF Output**: Compiles LaTeX to professional PDF resumes
 - **Batch Processing**: Generate multiple resumes at once
+- **Change Tracking**: Tracks which skills and projects were added to each resume
 
 ### Integration with Main Pipeline
 
@@ -416,16 +427,24 @@ python web_app.py --host 127.0.0.1 --port 5000
 
 The web app provides a REST API:
 
+**Job Management:**
 - `GET /api/stats` - Database statistics
 - `GET /api/jobs` - Get jobs with filters
 - `GET /api/jobs/<id>` - Get specific job
 - `POST /api/jobs/<id>/mark-applied` - Mark job as applied
 - `GET /api/unextracted` - Get unextracted jobs
+
+**Resume Management:**
 - `GET /api/resumes` - Get generated resumes
 - `GET /api/resumes/<id>/pdf` - Download resume PDF
-- `POST /api/search/run` - Run a job search
 
-See [WEB_FRONTEND.md](WEB_FRONTEND.md) for detailed documentation.
+**Search & Analysis:**
+- `POST /api/search/run` - Run a job search
+- `GET /api/pre-filtered` - Get pre-filtered jobs (by reason)
+- `GET /api/pre-filter-stats` - Pre-filter statistics
+- `GET /api/skills` - Get skill frequency data (by category)
+- `GET /api/skills/<skill_name>` - Get skill distribution across categories
+- `GET /api/skill-stats` - Overall skill statistics
 
 ---
 
@@ -753,11 +772,33 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
+## 🆕 Recent Features
+
+### Pre-Parse Filtering (Cost Saving)
+- Filters disqualifying jobs BEFORE expensive LLM calls using regex
+- Checks: YOE > max_yoe, non-US locations, citizenship/clearance requirements
+- Saves 20-40% on LLM costs
+- View stats: `python main.py --pre-filter-stats`
+
+### Skill Frequency Tracking
+- Tracks which skills appear in which job categories
+- Categories: Data Scientist, ML Engineer, AI Engineer, Applied Scientist, etc.
+- View stats: `python main.py --skill-stats`
+- Access via web API: `/api/skills`
+
+### Smart Resume Skills
+- Dynamically adds relevant skills from `extended_skills` based on job requirements
+- Only adds skills you actually have (from your extended_skills list)
+- Tracks which skills were added to each resume
+
+### Usage Tracking
+- Automatic tracking of Google Search API and OpenAI API usage
+- Cost calculation and historical reports
+- View: `python main.py --usage-report`
+
 ## 📚 Additional Documentation
 
-- [WEB_FRONTEND.md](WEB_FRONTEND.md) - Web frontend guide
-- [QUICK_START.md](QUICK_START.md) - Quick start guide
-- [CHANGES_SUMMARY.md](CHANGES_SUMMARY.md) - Recent changes and features
+- [ARCHITECTURE_FLOW.md](ARCHITECTURE_FLOW.md) - Complete architecture and flow documentation
 
 ## 🙏 Acknowledgments
 
