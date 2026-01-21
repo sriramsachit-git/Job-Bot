@@ -20,6 +20,7 @@ data/resumes/*.tex
 !data/.gitkeep
 data/*.yaml
 data/resume_config.yaml
+data/usage_reports/*.json
 
 # Logs
 logs/*.log
