@@ -1,0 +1,32 @@
+[Unit]
+Description=Daily Job Search Pipeline
+Documentation=https://github.com/yourusername/job_search_pipeline
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/job_search_pipeline
+Environment="PATH=/home/pi/.local/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONUNBUFFERED=1"
+
+# Main execution
+# NOTE: Paths will be automatically updated by setup_systemd.sh
+ExecStart=/usr/bin/python3 /home/pi/job_search_pipeline/daily_runner.py --daemon --schedule 09:00
+
+# Restart configuration
+Restart=always
+RestartSec=30
+
+# Logging
+StandardOutput=append:/var/log/job_search/output.log
+StandardError=append:/var/log/job_search/error.log
+
+# Resource limits
+MemoryMax=512M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target

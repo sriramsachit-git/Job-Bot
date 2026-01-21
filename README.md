@@ -33,6 +33,7 @@ This pipeline automates the tedious process of searching job boards, extracting 
 - [Installation](#-installation)
 - [Configuration](#-configuration)
 - [Usage](#-usage)
+- [Daily Automation](#-daily-automation)
 - [Resume Generation](#-resume-generation)
 - [Web Frontend](#-web-frontend)
 - [Customization](#-customization)
@@ -796,9 +797,70 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Cost calculation and historical reports
 - View: `python main.py --usage-report`
 
+## 🤖 Daily Automation
+
+The pipeline can be set up to run automatically every day. This is perfect for keeping your job search active without manual intervention.
+
+### Quick Start
+
+```bash
+# Run once immediately
+python daily_runner.py
+
+# Run as daemon (scheduled daily at 9 AM)
+python daily_runner.py --daemon
+
+# Custom schedule time
+python daily_runner.py --daemon --schedule "08:30"
+```
+
+### Setup Options
+
+**Option 1: Cron (Linux/Mac) - Recommended**
+```bash
+chmod +x setup_cron.sh
+./setup_cron.sh
+```
+
+**Option 2: Systemd Service (Linux)**
+```bash
+sudo ./setup_systemd.sh
+```
+
+**Option 3: Windows Task Scheduler**
+```cmd
+# Run as Administrator
+setup_windows_task.bat
+```
+
+### Features
+
+- **Automated Daily Runs**: Runs at scheduled time (default: 9 AM)
+- **Resume Generation**: Automatically generates resumes for top matches
+- **Web Dashboard**: Starts web server for viewing results
+- **Logging**: All runs logged to `logs/daily_runner.log`
+
+### Configuration
+
+The `daily_runner.py` script supports many options:
+
+```bash
+python daily_runner.py --help
+```
+
+Key options:
+- `--daemon` - Run as background daemon
+- `--schedule HH:MM` - Set custom schedule time
+- `--no-web` - Skip web server
+- `--no-resume` - Skip resume generation
+- `--top-jobs N` - Generate resumes for top N jobs
+
+See [DAILY_AUTOMATION.md](DAILY_AUTOMATION.md) for complete documentation.
+
 ## 📚 Additional Documentation
 
 - [ARCHITECTURE_FLOW.md](ARCHITECTURE_FLOW.md) - Complete architecture and flow documentation
+- [DAILY_AUTOMATION.md](DAILY_AUTOMATION.md) - Daily automation setup guide
 
 ## 🙏 Acknowledgments
 

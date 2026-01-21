@@ -180,7 +180,21 @@ def main():
         # Save to database
         for result in results:
             if result["success"]:
-                db.save_resume(result)
+                resume_id = db.save_resume(result)
+                # Save resume changes tracking
+                if resume_id > 0:
+                    job_id = result.get("job_id")
+                    location = result.get("resume_location")
+                    skills_added = result.get("skills_added", [])
+                    projects = result.get("selected_projects", [])
+                    if job_id:
+                        db.save_resume_changes(
+                            resume_id=resume_id,
+                            job_id=job_id,
+                            location=location,
+                            skills_added=skills_added,
+                            projects=projects
+                        )
         
         # Display results
         generator.display_results(results)
