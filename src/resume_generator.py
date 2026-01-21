@@ -33,10 +33,12 @@ class ResumeConfig:
     default_location: str
     approved_locations: List[str]
     location_mapping: Dict[str, str]
-    education: Dict[str, Any]
+    education: List[Dict[str, Any]]  # Changed from Dict to List
     experience: List[Dict[str, Any]]
     skills: Dict[str, List[str]]
     extended_skills: List[str] = field(default_factory=list)
+    certifications: List[Dict[str, str]] = field(default_factory=list)  # NEW
+    achievements: List[str] = field(default_factory=list)  # NEW
 
 
 @dataclass
@@ -100,15 +102,33 @@ class ResumeGenerator:
         with open(config_path, 'r') as f:
             data = yaml.safe_load(f)
         
+        # Handle education - can be single dict or list
+        education = data.get('education', [])
+        if isinstance(education, dict):
+            education = [education]  # Convert single dict to list
+        elif not isinstance(education, list):
+            education = []
+        
+        # Handle certifications and achievements
+        certifications = data.get('certifications', [])
+        if not isinstance(certifications, list):
+            certifications = []
+        
+        achievements = data.get('achievements', [])
+        if not isinstance(achievements, list):
+            achievements = []
+        
         return ResumeConfig(
             contact=data.get('contact', {}),
             default_location=data.get('default_location', 'San Diego, CA'),
             approved_locations=data.get('approved_locations', []),
             location_mapping=data.get('location_mapping', {}),
-            education=data.get('education', {}),
+            education=education,
             experience=data.get('experience', []),
             skills=data.get('skills', {}),
-            extended_skills=data.get('extended_skills', [])
+            extended_skills=data.get('extended_skills', []),
+            certifications=certifications,
+            achievements=achievements
         )
     
     def _load_projects(self, path: str) -> List[Project]:
@@ -503,27 +523,26 @@ Rank all {num_projects} projects. Scores should be 0-100.
 
 \begin{{center}}
     {{\LARGE\bfseries {name}}} \\[4pt]
-    {location} \\[2pt]
-    {email} | {phone} | \href{{https://{linkedin}}}{{LinkedIn}} | \href{{https://{github}}}{{GitHub}}
+    {contact_line}
 \end{{center}}
 
-\section*{{Summary}}
+\section*{{Professional Summary}}
 {summary}
 
 \section*{{Technical Skills}}
-\textbf{{Languages \& ML:}} {languages}, {ml_frameworks} \\
-\textbf{{Cloud \& Tools:}} {cloud_devops}, {ai_tools} \\
-\textbf{{Domains:}} {domains}
+{skills_section}
 
-\section*{{Experience}}
+\section*{{Education}}
+{education_section}
+
+\section*{{Work Experience}}
 {experience_section}
 
 \section*{{Projects}}
 {projects_section}
 
-\section*{{Education}}
-\textbf{{{degree}}}, {school} \hfill GPA: {gpa} | {graduation} \\
-\textit{{Relevant Coursework:}} {coursework}
+\section*{{Certifications and Achievements}}
+{certifications_section}
 
 \end{{document}}
 """
@@ -536,53 +555,162 @@ Rank all {num_projects} projects. Scores should be 0-100.
         # Get dynamic skills based on JD
         final_skills, skills_added = self.select_skills_for_job(rec.job_skills)
         
+        # Generate AI-enhanced summary
         summary = self._escape_latex(self._generate_summary(rec))
         
+        # Contact line: City | Phone | Email | LinkedIn | GitHub
+        location = self._escape_latex(rec.resume_location)
+        phone = self.resume_config.contact.get('phone', 'xxx-xxx-xxxx')
+        email = self.resume_config.contact.get('email', 'email@example.com')
+        linkedin = self._clean_url(self.resume_config.contact.get('linkedin', 'linkedin.com/in/'))
+        github = self._clean_url(self.resume_config.contact.get('github', 'github.com/'))
+        
+        contact_line = f"{location} | {phone} | {email} | \\href{{https://{linkedin}}}{{LinkedIn}} | \\href{{https://{github}}}{{GitHub}}"
+        
+        # Technical Skills section
+        skills_section = ""
+        skills_parts = []
+        if final_skills.get('languages') or final_skills.get('ml_frameworks'):
+            lang_ml = []
+            if final_skills.get('languages'):
+                lang_ml.append(", ".join(final_skills['languages']))
+            if final_skills.get('ml_frameworks'):
+                lang_ml.append(", ".join(final_skills['ml_frameworks']))
+            if lang_ml:
+                skills_parts.append(f"\\textbf{{Languages \\& ML:}} {', '.join(lang_ml)}")
+        
+        if final_skills.get('cloud_devops') or final_skills.get('ai_tools'):
+            cloud_tools = []
+            if final_skills.get('cloud_devops'):
+                cloud_tools.append(", ".join(final_skills['cloud_devops']))
+            if final_skills.get('ai_tools'):
+                cloud_tools.append(", ".join(final_skills['ai_tools']))
+            if cloud_tools:
+                skills_parts.append(f"\\textbf{{Cloud \\& Tools:}} {', '.join(cloud_tools)}")
+        
+        if final_skills.get('data_tools'):
+            skills_parts.append(f"\\textbf{{Data Tools:}} {', '.join(final_skills['data_tools'])}")
+        
+        if final_skills.get('domains'):
+            skills_parts.append(f"\\textbf{{Domains:}} {', '.join(final_skills['domains'])}")
+        
+        skills_section = " \\\\\n".join(skills_parts) + "\n"
+        
+        # Education section - all entries
+        education_section = ""
+        for edu in self.resume_config.education:
+            degree = self._escape_latex(edu.get('degree', ''))
+            school = self._escape_latex(edu.get('school', ''))
+            gpa = edu.get('gpa', '')
+            graduation = self._escape_latex(edu.get('graduation', ''))
+            
+            # Format: Degree (Bold) on left, School on same line
+            # Then GPA and Graduation on right
+            edu_line = f"\\textbf{{{degree}}}, {school}"
+            if gpa or graduation:
+                edu_line += " \\hfill "
+                parts = []
+                if gpa:
+                    parts.append(f"GPA: {gpa}")
+                if graduation:
+                    parts.append(graduation)
+                edu_line += " | ".join(parts)
+            education_section += edu_line + " \\\\\n"
+            
+            # Add coursework if present
+            coursework = edu.get('coursework', [])
+            if coursework and isinstance(coursework, list):
+                coursework_str = ", ".join(coursework)
+                education_section += f"\\textit{{Relevant Coursework:}} {self._escape_latex(coursework_str)} \\\\\n"
+            
+            education_section += "\\vspace{4pt}\n"
+        
+        # Work Experience section - STAR format
         experience_section = ""
         for exp in self.resume_config.experience:
             title = self._escape_latex(exp['title'])
             company = self._escape_latex(exp['company'])
             dates = self._escape_latex(exp['dates'])
-            experience_section += f"\\textbf{{{title}}} | {company} \\hfill {dates} \\\\\n"
+            
+            # Title (Bold) on left, dates on right
+            experience_section += f"\\textbf{{{title}}} \\hfill {dates} \\\\\n"
+            # Company (Italic) on new line
+            experience_section += f"\\textit{{{company}}} \\\\\n"
             experience_section += "\\begin{itemize}[leftmargin=*, nosep]\n"
-            for bullet in exp['bullets'][:3]:
+            
+            # Convert bullets to STAR format using AI
+            bullets = exp.get('bullets', [])
+            star_bullets = self._convert_to_star_format(bullets, "work_experience", title)
+            
+            for bullet in star_bullets[:3]:  # Limit to 3 bullets
                 experience_section += f"    \\item {self._escape_latex(bullet)}\n"
             experience_section += "\\end{itemize}\n\\vspace{4pt}\n"
         
+        # Projects section - STAR format
         projects_section = ""
         for project in rec.selected_projects:
             name = self._escape_latex(project.name)
-            metrics = self._escape_latex(project.metrics)
-            projects_section += f"\\textbf{{{name}}} | \\textit{{{metrics}}} \\\\\n"
+            # Projects might have dates in metrics or we can extract from project data
+            # For now, use metrics as dates/description
+            dates_or_metrics = self._escape_latex(project.metrics) if project.metrics else ""
+            
+            # Title (Bold) on left, dates/metrics on right (if available)
+            if dates_or_metrics:
+                projects_section += f"\\textbf{{{name}}} \\hfill \\textit{{{dates_or_metrics}}} \\\\\n"
+            else:
+                projects_section += f"\\textbf{{{name}}} \\\\\n"
+            
             projects_section += "\\begin{itemize}[leftmargin=*, nosep]\n"
-            for bullet in project.bullets[:2]:
+            
+            # Convert bullets to STAR format
+            star_bullets = self._convert_to_star_format(project.bullets, "project", name)
+            
+            for bullet in star_bullets[:3]:  # Limit to 3 bullets
                 projects_section += f"    \\item {self._escape_latex(bullet)}\n"
             projects_section += "\\end{itemize}\n\\vspace{4pt}\n"
         
-        # Clean URLs - remove https:// if present (template adds it)
-        linkedin = self._clean_url(self.resume_config.contact.get('linkedin', 'linkedin.com/in/'))
-        github = self._clean_url(self.resume_config.contact.get('github', 'github.com/'))
+        # Certifications and Achievements section
+        certifications_section = ""
+        
+        # Add certifications
+        for cert in self.resume_config.certifications:
+            if isinstance(cert, dict):
+                cert_name = self._escape_latex(cert.get('name', ''))
+                cert_org = cert.get('organization', '')
+                cert_date = cert.get('date', '')
+                
+                cert_line = f"\\textbf{{{cert_name}}}"
+                if cert_org or cert_date:
+                    cert_line += " \\hfill "
+                    if cert_org:
+                        cert_line += cert_org
+                    if cert_org and cert_date:
+                        cert_line += " | "
+                    if cert_date:
+                        cert_line += cert_date
+                certifications_section += cert_line + " \\\\\n"
+            elif isinstance(cert, str):
+                certifications_section += f"\\textbf{{{self._escape_latex(cert)}}} \\\\\n"
+        
+        # Add achievements
+        if self.resume_config.achievements:
+            certifications_section += "\\begin{itemize}[leftmargin=*, nosep]\n"
+            for achievement in self.resume_config.achievements:
+                certifications_section += f"    \\item {self._escape_latex(achievement)}\n"
+            certifications_section += "\\end{itemize}\n"
+        
+        if not certifications_section.strip():
+            certifications_section = "None listed.\n"
         
         latex = self.LATEX_TEMPLATE.format(
             name=self._escape_latex(self.resume_config.contact.get('name', 'Your Name')),
-            location=self._escape_latex(rec.resume_location),
-            email=self.resume_config.contact.get('email', 'email@example.com'),
-            phone=self.resume_config.contact.get('phone', 'xxx-xxx-xxxx'),
-            linkedin=linkedin,
-            github=github,
+            contact_line=contact_line,
             summary=summary,
-            languages=", ".join(final_skills.get('languages', [])),
-            ml_frameworks=", ".join(final_skills.get('ml_frameworks', [])),
-            cloud_devops=", ".join(final_skills.get('cloud_devops', [])),
-            ai_tools=", ".join(final_skills.get('ai_tools', [])),
-            domains=", ".join(final_skills.get('domains', [])),
+            skills_section=skills_section,
+            education_section=education_section,
             experience_section=experience_section,
             projects_section=projects_section,
-            degree=self._escape_latex(self.resume_config.education.get('degree', '')),
-            school=self._escape_latex(self.resume_config.education.get('school', '')),
-            gpa=self.resume_config.education.get('gpa', ''),
-            graduation=self._escape_latex(self.resume_config.education.get('graduation', '')),
-            coursework=", ".join(self.resume_config.education.get('coursework', []))
+            certifications_section=certifications_section
         )
         
         return latex, skills_added
@@ -607,6 +735,57 @@ Return ONLY the summary text, no quotes or labels. Keep it under 50 words."""
         )
         
         return response.choices[0].message.content.strip()
+    
+    @retry(stop=stop_after_attempt(2), wait=wait_exponential(min=1, max=3))
+    def _convert_to_star_format(self, bullets: List[str], context_type: str, context_name: str) -> List[str]:
+        """
+        Convert bullet points to STAR format (Situation, Task, Action, Result).
+        Uses AI to intelligently format bullets while preserving key metrics and achievements.
+        """
+        if not bullets:
+            return []
+        
+        prompt = f"""Convert these resume bullet points to STAR format (Situation, Task, Action, Result).
+        
+Context: {context_type} - {context_name}
+
+Current bullets:
+{chr(10).join(f"- {bullet}" for bullet in bullets)}
+
+Instructions:
+1. Keep all metrics, numbers, and quantifiable achievements
+2. Ensure each bullet follows STAR structure:
+   - Situation: Brief context/background
+   - Task: What needed to be done
+   - Action: What you specifically did
+   - Result: Quantifiable outcome/impact
+3. Make it concise (one sentence if possible, max 2)
+4. Start with action verbs (Built, Developed, Implemented, etc.)
+5. Preserve technical details and numbers
+
+Return ONLY the formatted bullets, one per line, no numbering or bullets."""
+        
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+                max_tokens=800
+            )
+            
+            formatted = response.choices[0].message.content.strip()
+            # Split by newlines and clean up
+            star_bullets = [line.strip().lstrip("- ").strip() for line in formatted.split('\n') if line.strip()]
+            
+            # Fallback to original if conversion failed
+            if not star_bullets:
+                return bullets[:3]  # Return first 3 original bullets
+            
+            return star_bullets[:3]  # Return up to 3 formatted bullets
+        
+        except Exception as e:
+            logger.warning(f"STAR format conversion failed: {e}, using original bullets")
+            return bullets[:3]  # Fallback to original
     
     def _compile_pdf(self, latex: str, output_path: Path) -> Optional[Path]:
         """Compile LaTeX to PDF."""
