@@ -10,17 +10,9 @@ __pycache__/
 dist/
 build/
 
-# Data
-data/*.db
-data/*.csv
-data/*.json
-data/resumes/
-data/resumes/*.log
-data/resumes/*.tex
+# Data - exclude entire data folder
+data/
 !data/.gitkeep
-data/*.yaml
-data/resume_config.yaml
-data/usage_reports/*.json
 
 # Logs
 logs/*.log

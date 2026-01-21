@@ -507,22 +507,24 @@ Rank all {num_projects} projects. Scores should be 0-100.
             url = url[7:]
         return url
 
-    LATEX_TEMPLATE = r"""\documentclass[11pt,a4paper]{{article}}
+    LATEX_TEMPLATE = r"""\documentclass[10pt,a4paper]{{article}}
 \usepackage[margin=0.6in]{{geometry}}
 \usepackage{{enumitem}}
 \usepackage{{hyperref}}
 \usepackage{{titlesec}}
-\usepackage{{parskip}}
+%\usepackage{{parskip}} 
 
 \pagestyle{{empty}}
 \setlength{{\parindent}}{{0pt}}
-\titleformat{{\section}}{{\large\bfseries}}{{}}{{0em}}{{}}[\titlerule]
-\titlespacing{{\section}}{{0pt}}{{8pt}}{{4pt}}
+\titleformat{{\section}}{{\Large\bfseries}}{{}}{{0em}}{{}}[\titlerule]
+\titlespacing{{\section}}{{0pt}}{{3pt}}{{2pt}}
 
 \begin{{document}}
+\setlength{{\parskip}}{{0pt}}
+\setlength{{\itemsep}}{{0pt}}
 
 \begin{{center}}
-    {{\LARGE\bfseries {name}}} \\[4pt]
+    {{\LARGE\bfseries {name}}} \\[2pt]
     {contact_line}
 \end{{center}}
 
@@ -598,14 +600,13 @@ Rank all {num_projects} projects. Scores should be 0-100.
         
         # Education section - all entries
         education_section = ""
-        for edu in self.resume_config.education:
+        for idx, edu in enumerate(self.resume_config.education):
             degree = self._escape_latex(edu.get('degree', ''))
             school = self._escape_latex(edu.get('school', ''))
             gpa = edu.get('gpa', '')
             graduation = self._escape_latex(edu.get('graduation', ''))
             
-            # Format: Degree (Bold) on left, School on same line
-            # Then GPA and Graduation on right
+            # Format: Degree (Bold) on left, School on same line, GPA/Graduation on right
             edu_line = f"\\textbf{{{degree}}}, {school}"
             if gpa or graduation:
                 edu_line += " \\hfill "
@@ -615,15 +616,20 @@ Rank all {num_projects} projects. Scores should be 0-100.
                 if graduation:
                     parts.append(graduation)
                 edu_line += " | ".join(parts)
-            education_section += edu_line + " \\\\\n"
+            
+            education_section += edu_line
             
             # Add coursework if present
             coursework = edu.get('coursework', [])
             if coursework and isinstance(coursework, list):
                 coursework_str = ", ".join(coursework)
-                education_section += f"\\textit{{Relevant Coursework:}} {self._escape_latex(coursework_str)} \\\\\n"
+                education_section += f" \\\\\n\\textit{{Relevant Coursework:}} {self._escape_latex(coursework_str)}"
             
-            education_section += "\\vspace{4pt}\n"
+            # Add line break between entries
+            if idx < len(self.resume_config.education) - 1:
+                education_section += " \\\\\n\\vspace{1pt}\n"
+            else:
+                education_section += " \\\\\n"
         
         # Work Experience section - STAR format
         experience_section = ""
@@ -634,8 +640,8 @@ Rank all {num_projects} projects. Scores should be 0-100.
             
             # Title (Bold) on left, dates on right
             experience_section += f"\\textbf{{{title}}} \\hfill {dates} \\\\\n"
-            # Company (Italic) on new line
-            experience_section += f"\\textit{{{company}}} \\\\\n"
+            # Company (Italic) on same line, then start bullets immediately
+            experience_section += f"\\textit{{{company}}}\n"
             experience_section += "\\begin{itemize}[leftmargin=*, nosep]\n"
             
             # Convert bullets to STAR format using AI
@@ -644,22 +650,15 @@ Rank all {num_projects} projects. Scores should be 0-100.
             
             for bullet in star_bullets[:3]:  # Limit to 3 bullets
                 experience_section += f"    \\item {self._escape_latex(bullet)}\n"
-            experience_section += "\\end{itemize}\n\\vspace{4pt}\n"
+            experience_section += "\\end{itemize}\n\\vspace{2pt}\n"
         
         # Projects section - STAR format
         projects_section = ""
         for project in rec.selected_projects:
             name = self._escape_latex(project.name)
-            # Projects might have dates in metrics or we can extract from project data
-            # For now, use metrics as dates/description
-            dates_or_metrics = self._escape_latex(project.metrics) if project.metrics else ""
             
-            # Title (Bold) on left, dates/metrics on right (if available)
-            if dates_or_metrics:
-                projects_section += f"\\textbf{{{name}}} \\hfill \\textit{{{dates_or_metrics}}} \\\\\n"
-            else:
-                projects_section += f"\\textbf{{{name}}} \\\\\n"
-            
+            # Title (Bold) only, no metrics displayed
+            projects_section += f"\\textbf{{{name}}}\n"
             projects_section += "\\begin{itemize}[leftmargin=*, nosep]\n"
             
             # Convert bullets to STAR format
@@ -667,10 +666,13 @@ Rank all {num_projects} projects. Scores should be 0-100.
             
             for bullet in star_bullets[:3]:  # Limit to 3 bullets
                 projects_section += f"    \\item {self._escape_latex(bullet)}\n"
-            projects_section += "\\end{itemize}\n\\vspace{4pt}\n"
+            projects_section += "\\end{itemize}\n\\vspace{2pt}\n"
         
-        # Certifications and Achievements section
+        # Certifications and Achievements section - unified bullet format
         certifications_section = ""
+        
+        # Combine certifications and achievements into single bullet list
+        all_items = []
         
         # Add certifications
         for cert in self.resume_config.certifications:
@@ -679,27 +681,30 @@ Rank all {num_projects} projects. Scores should be 0-100.
                 cert_org = cert.get('organization', '')
                 cert_date = cert.get('date', '')
                 
-                cert_line = f"\\textbf{{{cert_name}}}"
+                cert_text = f"\\textbf{{{cert_name}}}"
                 if cert_org or cert_date:
-                    cert_line += " \\hfill "
+                    cert_text += " - "
                     if cert_org:
-                        cert_line += cert_org
+                        cert_text += cert_org
                     if cert_org and cert_date:
-                        cert_line += " | "
+                        cert_text += ", "
                     if cert_date:
-                        cert_line += cert_date
-                certifications_section += cert_line + " \\\\\n"
+                        cert_text += cert_date
+                all_items.append(cert_text)
             elif isinstance(cert, str):
-                certifications_section += f"\\textbf{{{self._escape_latex(cert)}}} \\\\\n"
+                all_items.append(f"\\textbf{{{self._escape_latex(cert)}}}")
         
         # Add achievements
-        if self.resume_config.achievements:
-            certifications_section += "\\begin{itemize}[leftmargin=*, nosep]\n"
-            for achievement in self.resume_config.achievements:
-                certifications_section += f"    \\item {self._escape_latex(achievement)}\n"
-            certifications_section += "\\end{itemize}\n"
+        for achievement in self.resume_config.achievements:
+            all_items.append(self._escape_latex(achievement))
         
-        if not certifications_section.strip():
+        # Format as single bullet list
+        if all_items:
+            certifications_section += "\\begin{itemize}[leftmargin=*, nosep]\n"
+            for item in all_items:
+                certifications_section += f"    \\item {item}\n"
+            certifications_section += "\\end{itemize}\n"
+        else:
             certifications_section = "None listed.\n"
         
         latex = self.LATEX_TEMPLATE.format(
@@ -718,14 +723,14 @@ Rank all {num_projects} projects. Scores should be 0-100.
     @retry(stop=stop_after_attempt(2), wait=wait_exponential(min=1, max=3))
     def _generate_summary(self, rec: ResumeRecommendation) -> str:
         """Generate tailored summary for job."""
-        prompt = f"""Write a 2-3 sentence professional summary for a resume targeting this job:
+        prompt = f"""Write a concise 1-2 sentence professional summary for a resume targeting this job:
         
 Job: {rec.job_title} at {rec.company}
 Key Skills Needed: {', '.join(rec.job_skills[:5]) if rec.job_skills else 'AI/ML skills'}
 
 The candidate is an AI/ML Engineer with MS in Data Science, experience in ML pipelines, RAG systems, and deep learning.
 
-Return ONLY the summary text, no quotes or labels. Keep it under 50 words."""
+Return ONLY the summary text, no quotes or labels. Keep it under 30 words and max 2 lines when formatted."""
 
         response = self.client.chat.completions.create(
             model="gpt-4o-mini",
