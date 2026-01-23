@@ -27,34 +27,48 @@ export default function SearchProgress({ searchId, onComplete }: SearchProgressP
 
   useEffect(() => {
     // Connect to WebSocket for real-time updates
+    // Note: WebSocket will be used when backend properly implements it
+    // For now, we rely on polling via React Query
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/api/search/ws/${searchId}`;
     
-    const websocket = new WebSocket(wsUrl);
-    
-    websocket.onopen = () => {
-      console.log('WebSocket connected');
-    };
-    
-    websocket.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      // Update query cache with new status
-      // This will trigger a re-render
-    };
-    
-    websocket.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
-    
-    websocket.onclose = () => {
-      console.log('WebSocket disconnected');
-    };
-    
-    setWs(websocket);
-    
-    return () => {
-      websocket.close();
-    };
+    try {
+      const websocket = new WebSocket(wsUrl);
+      
+      websocket.onopen = () => {
+        console.log('WebSocket connected');
+      };
+      
+      websocket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          // Invalidate query to trigger refetch
+          // The query will pick up the new status
+        } catch (e) {
+          console.error('Error parsing WebSocket message:', e);
+        }
+      };
+      
+      websocket.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        // Fallback to polling (already handled by React Query)
+      };
+      
+      websocket.onclose = () => {
+        console.log('WebSocket disconnected');
+      };
+      
+      setWs(websocket);
+      
+      return () => {
+        if (websocket.readyState === WebSocket.OPEN) {
+          websocket.close();
+        }
+      };
+    } catch (error) {
+      console.warn('WebSocket not available, using polling:', error);
+      // React Query polling will handle updates
+    }
   }, [searchId]);
 
   useEffect(() => {
