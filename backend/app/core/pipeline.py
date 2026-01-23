@@ -11,6 +11,7 @@ from sqlalchemy import select, update
 
 from app.models.search_session import SearchSession
 from app.models.job import Job
+from app.services.job_service import JobService
 from src.pipeline import JobSearchPipeline
 from src.llm_parser import ParsedJob
 
@@ -60,15 +61,13 @@ class AsyncSearchPipeline:
             # Update status to running
             await update_status("searching", 10, {"message": "Starting search..."})
             
-            # Run pipeline in thread pool (it's synchronous)
-            loop = asyncio.get_event_loop()
-            summary = await loop.run_in_executor(
-                None,
-                self._run_sync_pipeline,
+            # Run pipeline and save to async database
+            summary = await self._run_sync_pipeline_with_db_save(
+                db,
                 job_titles,
                 domains,
                 filters or {},
-                update_status
+                search_id
             )
             
             # Update final status
@@ -111,26 +110,70 @@ class AsyncSearchPipeline:
             await db.commit()
             raise
     
-    def _run_sync_pipeline(
+    async def _run_sync_pipeline_with_db_save(
         self,
+        db: AsyncSession,
         job_titles: List[str],
         domains: List[str],
         filters: Dict[str, Any],
-        update_status_callback
+        search_id: int
     ) -> Dict[str, Any]:
         """
-        Run the synchronous pipeline.
-        This runs in a thread pool.
+        Run the synchronous pipeline and save jobs to async database.
         """
-        # Note: update_status_callback won't work here since it's async
-        # We'll update status at key points instead
-        summary = self.pipeline.run(
-            keywords=job_titles,
-            sites=domains,
-            num_results=filters.get("num_results", 50),
-            date_restrict=filters.get("date_restrict", "d1"),
-            min_score=filters.get("min_score", 30)
+        # Run pipeline in thread pool
+        loop = asyncio.get_event_loop()
+        summary = await loop.run_in_executor(
+            None,
+            self.pipeline.run,
+            job_titles,
+            domains,
+            filters.get("num_results", 50),
+            filters.get("date_restrict", "d1"),
+            filters.get("min_score", 30)
         )
+        
+        # Get newly saved jobs from the pipeline's database
+        # and save them to async database
+        if summary.get("saved", 0) > 0:
+            try:
+                # Get jobs from the pipeline's database
+                new_jobs = summary.get("new_jobs", [])
+                if new_jobs:
+                    # Convert to ParsedJob format and save to async DB
+                    from src.llm_parser import ParsedJob
+                    jobs_to_save = []
+                    
+                    for job_dict in new_jobs:
+                        try:
+                            # Reconstruct ParsedJob from dict
+                            parsed_job = ParsedJob(
+                                job_title=job_dict.get("title", ""),
+                                company=job_dict.get("company", ""),
+                                location=job_dict.get("location"),
+                                remote=job_dict.get("remote"),
+                                employment_type=job_dict.get("employment_type"),
+                                salary_range=job_dict.get("salary"),
+                                yoe_required=job_dict.get("yoe_required", 0),
+                                required_skills=job_dict.get("required_skills", []),
+                                nice_to_have_skills=job_dict.get("nice_to_have_skills", []),
+                                responsibilities=job_dict.get("responsibilities", []),
+                                job_summary=job_dict.get("job_summary"),
+                                source_url=job_dict.get("url", ""),
+                                source_domain=job_dict.get("source_domain", "")
+                            )
+                            score = job_dict.get("relevance_score", 0)
+                            jobs_to_save.append((parsed_job, score))
+                        except Exception as e:
+                            logger.error(f"Error converting job: {e}")
+                    
+                    if jobs_to_save:
+                        saved, skipped = await JobService.save_jobs_batch(db, jobs_to_save)
+                        summary["async_saved"] = saved
+                        summary["async_skipped"] = skipped
+            except Exception as e:
+                logger.error(f"Error saving jobs to async DB: {e}")
+        
         return summary
     
     async def _update_search_status(
