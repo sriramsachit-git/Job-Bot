@@ -19,9 +19,23 @@ class TestContentExtractorExtended:
         <body>
             <main>
                 <div class="job-description">
-                    <h1>Software Engineer</h1>
-                    <p>We are looking for a software engineer with 5+ years of experience.</p>
-                    <p>Requirements: Python, Django, PostgreSQL</p>
+                    <h1>Software Engineer - Machine Learning</h1>
+                    <p>We are looking for a software engineer with 5+ years of experience in machine learning and artificial intelligence.</p>
+                    <p>Requirements: Python, Django, PostgreSQL, TensorFlow, PyTorch, Kubernetes, Docker, AWS, GCP</p>
+                    <p>Responsibilities:</p>
+                    <ul>
+                        <li>Design and implement machine learning models for production systems</li>
+                        <li>Collaborate with cross-functional teams to deploy ML solutions</li>
+                        <li>Optimize model performance and scalability</li>
+                        <li>Build data pipelines for training and inference</li>
+                        <li>Monitor and maintain ML systems in production</li>
+                        <li>Research and implement state-of-the-art ML techniques</li>
+                        <li>Work with large-scale distributed systems</li>
+                        <li>Participate in code reviews and technical discussions</li>
+                    </ul>
+                    <p>Nice to have: Experience with LLMs, RAG systems, vector databases, MLOps tools</p>
+                    <p>Location: San Francisco, CA (Remote OK)</p>
+                    <p>Compensation: Competitive salary and equity package</p>
                 </div>
             </main>
         </body>
@@ -72,9 +86,21 @@ class TestContentExtractorExtended:
         <html>
         <body>
             <main class="job-content">
-                <h1>Job Title</h1>
-                <p>This is a detailed job description with enough content to pass the minimum length requirement.</p>
-                <p>It includes multiple paragraphs and details about the position.</p>
+                <h1>Senior Machine Learning Engineer</h1>
+                <p>This is a detailed job description with enough content to pass the minimum length requirement of 500 characters.</p>
+                <p>We are seeking an experienced ML Engineer to join our team and work on cutting-edge AI projects.</p>
+                <p>Requirements include:</p>
+                <ul>
+                    <li>5+ years of experience in machine learning and deep learning</li>
+                    <li>Strong proficiency in Python, PyTorch, and TensorFlow</li>
+                    <li>Experience with distributed training and model deployment</li>
+                    <li>Knowledge of cloud platforms like AWS, GCP, or Azure</li>
+                    <li>Understanding of MLOps practices and tools</li>
+                    <li>Experience with large language models and transformer architectures</li>
+                    <li>Strong problem-solving and communication skills</li>
+                </ul>
+                <p>You will work on exciting projects involving natural language processing, computer vision, and recommendation systems.</p>
+                <p>We offer competitive compensation, comprehensive benefits, and a collaborative work environment.</p>
             </main>
         </body>
         </html>

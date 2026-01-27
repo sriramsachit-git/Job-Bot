@@ -20,7 +20,7 @@ This pipeline automates the tedious process of searching job boards, extracting 
 - **💾 Persistent Storage** - SQLite database with deduplication and failed extraction tracking
 - **📊 CSV Export** - Export results for spreadsheet analysis
 - **📄 Smart Resume Generation** - AI-powered tailored resume generation with dynamic skill selection and PDF output
-- **🌐 Web Frontend** - Flask-based dashboard accessible from any device on your network
+- **🌐 Web Frontend** - FastAPI backend with React frontend (Flask also available for simple deployments)
 - **📋 Unextracted Jobs Tracking** - Never lose a job posting - failed extractions saved for retry
 - **📈 Usage Tracking** - Automatic API usage and cost tracking with historical reports
 - **⚡ Rate Limiting** - Built-in retry logic and respectful rate limiting
@@ -33,6 +33,7 @@ This pipeline automates the tedious process of searching job boards, extracting 
 - [Installation](#-installation)
 - [Configuration](#-configuration)
 - [Usage](#-usage)
+- [Entry Points](#-entry-points)
 - [Daily Automation](#-daily-automation)
 - [Resume Generation](#-resume-generation)
 - [Web Frontend](#-web-frontend)
@@ -74,6 +75,11 @@ python main.py --daily
 # Ubuntu/Debian: sudo apt-get install texlive-latex-base texlive-latex-extra
 
 # 7. (Optional) Start web frontend
+# Option A: FastAPI + React (recommended)
+cd backend && uvicorn app.main:app --reload
+cd frontend && npm install && npm start
+
+# Option B: Flask (simple, deprecated)
 python web_app.py --host 0.0.0.0 --port 5000
 ```
 
@@ -125,7 +131,7 @@ python web_app.py --host 0.0.0.0 --port 5000
    sudo apt-get install texlive-latex-base texlive-latex-extra
    
    # Verify installation
-   python check_pdf_setup.py
+   python scripts/check_pdf_setup.py
    ```
 
 6. **Set up configuration**
@@ -138,6 +144,13 @@ python web_app.py --host 0.0.0.0 --port 5000
 ---
 
 ## ⚙️ Configuration
+
+This project uses **two configuration systems** for different parts of the application:
+
+- **`src/config.py`** - Used by CLI, Flask app, and core pipeline (simple Config class)
+- **`backend/app/config.py`** - Used by FastAPI backend (Pydantic Settings with type validation)
+
+Both systems read from the same `.env` file. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for detailed documentation on when to use each system and how they differ.
 
 ### Environment Variables (`.env`)
 
@@ -283,6 +296,63 @@ pipeline.cleanup()
 
 ---
 
+## 🚪 Entry Points
+
+This project has multiple entry points for different use cases:
+
+### 1. CLI (Primary) - `python main.py`
+Main command-line interface for job searching and pipeline operations.
+
+```bash
+python main.py --daily                    # Run daily search
+python main.py --keywords "AI engineer"    # Custom search
+python main.py --stats                     # View statistics
+```
+
+**Location**: `/main.py`  
+**Dependencies**: `requirements.txt` (root)
+
+### 2. FastAPI Backend (Recommended for Web)
+Modern async API backend with automatic OpenAPI documentation.
+
+```bash
+cd backend
+uvicorn app.main:app --reload
+# Access API at http://localhost:8000
+# Docs at http://localhost:8000/docs
+```
+
+**Location**: `/backend/app/main.py`  
+**Dependencies**: `backend/requirements.txt`
+
+### 3. React Frontend
+Modern web UI that connects to FastAPI backend.
+
+```bash
+cd frontend
+npm install
+npm start
+# Access UI at http://localhost:3000
+```
+
+**Location**: `/frontend/`  
+**Dependencies**: `frontend/package.json`
+
+### 4. Flask Web App (Deprecated)
+Simple Flask-based web interface. Kept for backward compatibility.
+
+```bash
+python web_app.py --host 0.0.0.0 --port 5000
+```
+
+**Location**: `/web_app.py`  
+**Dependencies**: `requirements.txt` (includes Flask)  
+**Status**: Deprecated - use FastAPI + React instead
+
+See [docs/FRAMEWORK_DECISION.md](docs/FRAMEWORK_DECISION.md) for framework strategy details.
+
+---
+
 ## 📄 Resume Generation
 
 The pipeline includes AI-powered resume generation that tailors your resume to each job posting.
@@ -291,19 +361,19 @@ The pipeline includes AI-powered resume generation that tailors your resume to e
 
 ```bash
 # Generate resumes for top 10 jobs (interactive)
-python generate_resumes.py
+python scripts/generate_resumes.py
 
 # Auto-select top 3 projects for each job
-python generate_resumes.py --auto
+python scripts/generate_resumes.py --auto
 
 # Generate for specific job ID
-python generate_resumes.py --job-id 42
+python scripts/generate_resumes.py --job-id 42
 
 # Generate for top 5 jobs with min score 40
-python generate_resumes.py --top 5 --min-score 40
+python scripts/generate_resumes.py --top 5 --min-score 40
 
 # List all generated resumes
-python generate_resumes.py --list-resumes
+python scripts/generate_resumes.py --list-resumes
 ```
 
 ### Setup
@@ -386,6 +456,36 @@ Resume generation is now integrated into the main pipeline flow. After running a
 
 ## 🌐 Web Frontend
 
+### FastAPI + React (Recommended)
+
+The primary web interface uses FastAPI for the backend and React for the frontend:
+
+```bash
+# Start FastAPI backend
+cd backend
+uvicorn app.main:app --reload
+# Backend runs on http://localhost:8000
+# API docs available at http://localhost:8000/docs
+
+# Start React frontend (in another terminal)
+cd frontend
+npm install
+npm start
+# Frontend runs on http://localhost:3000
+```
+
+**Features:**
+- Modern async API with automatic OpenAPI documentation
+- React-based UI with better UX
+- Type-safe request/response handling
+- Better performance with async operations
+
+See [docs/WEB_APP.md](docs/WEB_APP.md) for detailed setup instructions.
+
+### Flask Web App (Deprecated)
+
+The Flask app is kept for backward compatibility but is deprecated:
+
 A Flask-based web dashboard to view and manage your job search pipeline from any device on your network. Perfect for running on Jetson Nano and viewing on your PC.
 
 ### Starting the Web Server
@@ -400,6 +500,8 @@ python web_app.py --host 0.0.0.0 --port 8080
 # Development mode (local only)
 python web_app.py --host 127.0.0.1 --port 5000
 ```
+
+**Note**: Flask app is deprecated. New development should use FastAPI + React instead. See [docs/FRAMEWORK_DECISION.md](docs/FRAMEWORK_DECISION.md) for details.
 
 ### Accessing from PC
 
@@ -632,7 +734,8 @@ The pipeline supports 30+ ATS (Applicant Tracking System) platforms:
 | `search.py` | Google Custom Search API wrapper |
 | `extractor.py` | Web content extraction (Jina + Playwright + BeautifulSoup) |
 | `resume_generator.py` | AI-powered resume generation with PDF output |
-| `web_app.py` | Flask web frontend for remote access |
+| `web_app.py` | Flask web frontend (deprecated, use FastAPI instead) |
+| `backend/app/main.py` | FastAPI backend application |
 | `llm_parser.py` | GPT-4o-mini job parsing |
 | `filters.py` | Relevance scoring and filtering |
 | `storage.py` | SQLite database operations |
@@ -713,7 +816,7 @@ playwright install chromium
 **6. PDF generation fails**
 ```bash
 # Check if pdflatex is installed
-python check_pdf_setup.py
+python scripts/check_pdf_setup.py
 
 # Install LaTeX if needed (see Installation section)
 ```
@@ -805,13 +908,13 @@ The pipeline can be set up to run automatically every day. This is perfect for k
 
 ```bash
 # Run once immediately
-python daily_runner.py
+python scripts/daily_runner.py
 
 # Run as daemon (scheduled daily at 9 AM)
-python daily_runner.py --daemon
+python scripts/daily_runner.py --daemon
 
 # Custom schedule time
-python daily_runner.py --daemon --schedule "08:30"
+python scripts/daily_runner.py --daemon --schedule "08:30"
 ```
 
 ### Setup Options
@@ -842,10 +945,10 @@ setup_windows_task.bat
 
 ### Configuration
 
-The `daily_runner.py` script supports many options:
+The `scripts/daily_runner.py` script supports many options:
 
 ```bash
-python daily_runner.py --help
+python scripts/daily_runner.py --help
 ```
 
 Key options:
