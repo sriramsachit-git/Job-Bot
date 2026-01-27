@@ -10,10 +10,10 @@ from typing import List, Dict, Any
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
-    # API Keys
-    google_api_key: str
-    google_cse_id: str
-    openai_api_key: str
+    # API Keys (optional for testing, required for actual use)
+    google_api_key: str = ""
+    google_cse_id: str = ""
+    openai_api_key: str = ""
     
     # Database
     database_url: str = "sqlite+aiosqlite:///./data/jobs.db"
@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "ignore"  # Ignore extra environment variables
 
 
 # Create settings instance

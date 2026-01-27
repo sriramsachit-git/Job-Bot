@@ -40,11 +40,14 @@ class Job(Base):
     
     # Resume relationship
     resume_id = Column(Integer, ForeignKey("resumes.id"), nullable=True)
-    resume_url = Column(String, nullable=True)  # Cloud storage URL
+    resume_url = Column(String, nullable=True)  # Cloud storage URL (for primary resume if needed)
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
     # Relationships
-    resume = relationship("Resume", back_populates="job", foreign_keys=[resume_id])
+    # Primary resume (many-to-one via resume_id) - no back_populates to avoid conflict
+    resume = relationship("Resume", foreign_keys=[resume_id], post_update=True)
+    # All resumes for this job (one-to-many via Resume.job_id)
+    resumes = relationship("Resume", back_populates="job", foreign_keys="Resume.job_id", cascade="all, delete-orphan")

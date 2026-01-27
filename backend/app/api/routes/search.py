@@ -1,6 +1,7 @@
 """
 Search API routes.
 """
+import logging
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 import json
@@ -9,6 +10,7 @@ from app.api.deps import get_database
 from app.services.search_service import SearchService
 from app.schemas.search import SearchStart, SearchStatus, SearchResults
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/search", tags=["search"])
 
 

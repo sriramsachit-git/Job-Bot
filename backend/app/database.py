@@ -3,13 +3,18 @@ Database setup with SQLAlchemy.
 """
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
+from sqlalchemy.pool import NullPool
 from app.config import settings
 
-# Create async engine
+# Create async engine with proper SQLite threading configuration
+# For aiosqlite, we need to disable thread checking and use NullPool
+# to avoid thread-safety issues with async operations
 engine = create_async_engine(
     settings.database_url,
     echo=settings.debug,
-    future=True
+    future=True,
+    connect_args={"check_same_thread": False},
+    poolclass=NullPool,  # Use NullPool to avoid connection sharing issues
 )
 
 # Create async session factory

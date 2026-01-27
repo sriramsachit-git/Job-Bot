@@ -42,6 +42,7 @@ class JobDatabase:
         self.cursor = self.conn.cursor()
         
         self._create_tables()
+        self._migrate_schema()
         logger.info(f"Database initialized: {db_path}")
     
     def __enter__(self):
@@ -166,6 +167,65 @@ class JobDatabase:
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_resume_job ON resumes(job_id)")
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_unextracted_url ON unextracted_jobs(url)")
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_unextracted_retry ON unextracted_jobs(retry_count)")
+    
+    def _migrate_schema(self):
+        """
+        Migrate database schema to add missing columns.
+        Handles cases where existing databases don't have newer columns.
+        """
+        try:
+            # Check if jobs table exists
+            self.cursor.execute("""
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='jobs'
+            """)
+            if not self.cursor.fetchone():
+                logger.debug("Jobs table doesn't exist yet, skipping migration")
+                return
+            
+            # Get existing columns
+            self.cursor.execute("PRAGMA table_info(jobs)")
+            columns = {row[1] for row in self.cursor.fetchall()}
+            logger.debug(f"Existing columns in jobs table: {sorted(columns)}")
+            
+            # Handle salary column migration
+            # The code expects 'salary' but older databases may have 'salary_range'
+            if 'salary' not in columns:
+                logger.warning("Migrating: Adding missing 'salary' column to jobs table")
+                try:
+                    # Add the salary column
+                    self.cursor.execute("ALTER TABLE jobs ADD COLUMN salary TEXT")
+                    
+                    # If salary_range exists, copy its data to salary
+                    if 'salary_range' in columns:
+                        logger.info("Migrating data from 'salary_range' to 'salary'")
+                        self.cursor.execute("""
+                            UPDATE jobs 
+                            SET salary = salary_range 
+                            WHERE salary IS NULL AND salary_range IS NOT NULL
+                        """)
+                        logger.info("✓ Data migrated from salary_range to salary")
+                    
+                    self.conn.commit()
+                    logger.info("✓ Migration complete: 'salary' column added successfully")
+                    
+                    # Verify the column was added
+                    self.cursor.execute("PRAGMA table_info(jobs)")
+                    columns_after = {row[1] for row in self.cursor.fetchall()}
+                    if 'salary' in columns_after:
+                        logger.info("✓ Verified: 'salary' column exists after migration")
+                    else:
+                        logger.error("✗ Migration failed: 'salary' column still missing after ALTER TABLE")
+                except sqlite3.Error as alter_error:
+                    logger.error(f"Failed to add 'salary' column: {alter_error}")
+                    self.conn.rollback()
+                    raise
+            else:
+                logger.debug("'salary' column already exists, no migration needed")
+        except sqlite3.Error as e:
+            logger.error(f"Error during schema migration: {e}", exc_info=True)
+            # Don't raise - allow the database to continue functioning
+            # But log the error so we know what went wrong
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_prefilter_reason ON pre_filtered_jobs(filter_reason)")
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_skill_name ON skill_frequency(skill_name)")
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_skill_category ON skill_frequency(job_title_category)")
@@ -621,7 +681,7 @@ class JobDatabase:
         params = []
         
         if max_retries is not None:
-            query += " AND retry_count < ?"
+            query += " AND retry_count <= ?"
             params.append(max_retries)
         
         query += " ORDER BY retry_count ASC, created_at DESC LIMIT ?"

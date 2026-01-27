@@ -1,23 +1,75 @@
+# Backend requirements with exact versions (frozen)
+# Generated from pip freeze on 2026-01-26
+
+# Core FastAPI dependencies
 fastapi==0.115.0
 uvicorn[standard]==0.32.0
-sqlalchemy==2.0.36
+starlette==0.38.6
 pydantic==2.12.5
 pydantic-settings==2.12.0
-python-dotenv==1.2.1
-python-multipart==0.0.12
-websockets==14.1
-boto3==1.35.0  # AWS S3
-google-cloud-storage==2.18.2  # GCS
+pydantic-core==2.41.5
+annotated-types==0.6.0
+typing-extensions==4.15.0
+email-validator==2.2.0
+
+# Database
+sqlalchemy==2.0.36
 aiosqlite==0.20.0  # Async SQLite
 alembic==1.14.0  # Database migrations
+greenlet==3.2.3
+Mako==1.3.10
 
-# Existing dependencies
-openai==2.15.0
-google-api-python-client==2.187.0
+# HTTP & Web
+requests==2.32.5
+websockets==14.1
+python-multipart==0.0.12
+httplib2==0.31.0
+urllib3==1.26.19
+certifi==2024.8.30
+charset-normalizer==2.0.4
+idna==3.10
+
+# Async
+anyio==4.2.0
+sniffio==1.3.0
+h11==0.14.0
+
+# Web scraping
 beautifulsoup4==4.14.3
 playwright==1.57.0
-requests==2.32.5
+lxml==5.3.1
+html5lib==1.1
+soupsieve==2.5
+cssselect==1.2.0
+w3lib==2.1.2
+six==1.16.0
+
+# Data processing
+numpy>=2.0.0  # Use NumPy 2.x (compatible with Python 3.13)
+pandas>=2.3.0
+
+# Cloud storage
+boto3==1.35.0  # AWS S3
+google-cloud-storage==2.18.2  # GCS
+google-api-python-client==2.187.0
+google-api-core==2.26.0
+google-auth==2.41.1
+google-auth-httplib2==0.2.0
+google-auth-oauthlib==1.2.3
+google-resumable-media==2.7.2
+protobuf==5.29.3
+cachetools==4.2.2
+pyasn1==0.4.8
+pyasn1-modules==0.2.8
+rsa==4.9
+
+# AI/ML
+openai==2.15.0
+
+# Utilities
+python-dotenv==1.2.1
 PyYAML==6.0.3
-pandas==2.3.3
 rich==14.2.0
 tenacity==9.1.2
+click==8.1.7
+packaging==25.0

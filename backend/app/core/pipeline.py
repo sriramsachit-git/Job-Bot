@@ -25,8 +25,10 @@ class AsyncSearchPipeline:
     """
     
     def __init__(self):
-        """Initialize the pipeline."""
-        self.pipeline = None
+        """Initialize the async pipeline wrapper."""
+        # Pipeline is created per-execution in executor thread to avoid
+        # SQLite thread-safety issues (connections are thread-local)
+        pass
     
     async def run_search(
         self,
@@ -54,10 +56,6 @@ class AsyncSearchPipeline:
             await self._update_search_status(db, search_id, step, progress, details)
         
         try:
-            # Initialize pipeline
-            if not self.pipeline:
-                self.pipeline = JobSearchPipeline()
-            
             # Update status to running
             await update_status("searching", 10, {"message": "Starting search..."})
             
@@ -120,18 +118,26 @@ class AsyncSearchPipeline:
     ) -> Dict[str, Any]:
         """
         Run the synchronous pipeline and save jobs to async database.
+        
+        Note: Pipeline must be created inside the executor thread to avoid
+        SQLite thread-safety issues (connections are thread-local).
         """
+        def _run_pipeline_in_thread():
+            """Create pipeline and run it in the executor thread."""
+            # Create pipeline inside the executor thread so SQLite connection
+            # is created and used in the same thread
+            pipeline = JobSearchPipeline()
+            return pipeline.run(
+                job_titles,
+                domains,
+                filters.get("num_results", 50),
+                filters.get("date_restrict", "d1"),
+                filters.get("min_score", 30)
+            )
+        
         # Run pipeline in thread pool
         loop = asyncio.get_event_loop()
-        summary = await loop.run_in_executor(
-            None,
-            self.pipeline.run,
-            job_titles,
-            domains,
-            filters.get("num_results", 50),
-            filters.get("date_restrict", "d1"),
-            filters.get("min_score", 30)
-        )
+        summary = await loop.run_in_executor(None, _run_pipeline_in_thread)
         
         # Get newly saved jobs from the pipeline's database
         # and save them to async database

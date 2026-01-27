@@ -6,7 +6,15 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Checkbox } from '../components/ui/checkbox';
-import { useToast } from '../hooks/use-toast';
+// Simple toast implementation (can be replaced with a toast library)
+const useToast = () => {
+  return {
+    toast: ({ title, description, variant }: any) => {
+      // Simple alert for now - can be replaced with a proper toast component
+      alert(`${title}: ${description || ''}`);
+    },
+  };
+};
 
 export default function Settings() {
   const queryClient = useQueryClient();

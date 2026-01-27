@@ -29,4 +29,5 @@ class Resume(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
-    job = relationship("Job", back_populates="resume", foreign_keys=[job_id])
+    # Job this resume belongs to (many-to-one via job_id)
+    job = relationship("Job", back_populates="resumes", foreign_keys=[job_id])
