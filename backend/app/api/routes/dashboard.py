@@ -81,4 +81,6 @@ async def get_recent_jobs(
     jobs = result.scalars().all()
     
     from app.schemas.job import JobResponse
-    return [JobResponse.model_validate(job) for job in jobs]
+    from app.api.routes.jobs import job_to_dict
+    
+    return [JobResponse.model_validate(job_to_dict(job)) for job in jobs]

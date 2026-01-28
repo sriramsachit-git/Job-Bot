@@ -33,3 +33,29 @@ __pycache__/
 .env
 jobs.db
 logs/
+
+# Frontend build artifacts
+frontend/node_modules/
+frontend/.vite/
+frontend/dist/
+frontend/build/
+
+# Duplicate files (accidental copies with " 2", " 3", " 4" suffix)
+* 2*
+* 3*
+* 4*
+**/* 2*
+**/* 3*
+**/* 4*
+
+# Test files (optional - uncomment if you don't want to track test files)
+# test_*.py
+# tests/test_*.py
+
+# Requirements freeze files
+requirements-frozen.txt
+backend/requirements-frozen.txt
+
+# Package lock files (if using npm/yarn)
+package-lock.json
+frontend/package-lock.json

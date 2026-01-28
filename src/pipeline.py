@@ -5,7 +5,7 @@ Coordinates search, extraction, parsing, filtering, and storage.
 
 import logging
 from datetime import datetime, timedelta
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Callable
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.table import Table
@@ -67,7 +67,8 @@ class JobSearchPipeline:
         date_restrict: str = "d1",
         min_score: int = 30,
         per_site: Optional[int] = None,
-        comprehensive: bool = False
+        comprehensive: bool = False,
+        progress_callback: Optional[Callable[[str, int, Optional[Dict[str, Any]]], None]] = None
     ) -> Dict[str, Any]:
         """
         Run the complete job search pipeline.
@@ -102,6 +103,8 @@ class JobSearchPipeline:
         }
         
         try:
+            if progress_callback:
+                progress_callback("searching", 10, {"message": "Searching job boards..."})
             # Step 1: Search Google
             console.print("\n[bold cyan]🔍 Step 1: Searching for jobs...[/bold cyan]")
             
@@ -162,6 +165,8 @@ class JobSearchPipeline:
             
             summary["searched"] = len(search_results)
             console.print(f"[green]Found {len(search_results)} job URLs[/green]\n")
+            if progress_callback:
+                progress_callback("searching", 15, {"urls_found": len(search_results)})
             
             if not search_results:
                 console.print("[yellow]No results found. Try different keywords.[/yellow]")
@@ -169,6 +174,8 @@ class JobSearchPipeline:
             
             # Step 1.5: Early filtering to save credits (before extraction)
             console.print("[bold cyan]🔍 Step 1.5: Early filtering (saving credits)...[/bold cyan]")
+            if progress_callback:
+                progress_callback("filtering", 20, {"message": "Early filtering URLs..."})
             filtered_results = []
             skipped_count = 0
             skipped_reasons = {"keywords": 0, "location": 0}
@@ -208,9 +215,13 @@ class JobSearchPipeline:
                 return summary
             
             console.print(f"[green]Proceeding with {len(filtered_results)}/{len(search_results)} jobs[/green]\n")
+            if progress_callback:
+                progress_callback("extracting", 30, {"urls_found": len(filtered_results)})
             
             # Step 2: Extract content
             console.print("[bold cyan]📄 Step 2: Extracting job content...[/bold cyan]")
+            if progress_callback:
+                progress_callback("extracting", 40, {"message": "Extracting job content..."})
             urls = [r["link"] for r in filtered_results]
             # Limit batch size to prevent overwhelming the system
             max_extraction_batch = min(50, len(urls))  # Process max 50 at a time
@@ -221,6 +232,8 @@ class JobSearchPipeline:
             )
             summary["extracted"] = sum(1 for e in extracted if e["success"])
             console.print(f"[green]Extracted {summary['extracted']}/{len(urls)} pages[/green]\n")
+            if progress_callback:
+                progress_callback("extracting", 55, {"jobs_extracted": summary["extracted"]})
             
             # Store failed extractions and track usage
             failed_count = 0
@@ -253,6 +266,8 @@ class JobSearchPipeline:
             # Step 3: Pre-parse filtering (NEW)
             if self.pre_filter:
                 console.print("[bold cyan]📋 Step 3: Pre-filtering jobs...[/bold cyan]")
+                if progress_callback:
+                    progress_callback("filtering", 60, {"message": "Pre-filtering extracted jobs..."})
                 passed_contents, filtered_contents = self.pre_filter.filter_batch(extracted)
                 
                 summary["pre_filtered"] = len(filtered_contents)
@@ -289,9 +304,13 @@ class JobSearchPipeline:
             
             # Step 4: Parse with LLM (renumber from Step 3)
             console.print("[bold cyan]🤖 Step 4: Parsing job details with AI...[/bold cyan]")
+            if progress_callback:
+                progress_callback("parsing", 70, {"message": "Parsing jobs with AI..."})
             jobs, token_usage = self.parser.parse_batch(contents_to_parse)
             summary["parsed"] = len(jobs)
             console.print(f"[green]Parsed {len(jobs)} job postings[/green]\n")
+            if progress_callback:
+                progress_callback("parsing", 80, {"jobs_parsed": summary["parsed"]})
             
             # Track OpenAI usage
             if self.usage_tracker and token_usage:
@@ -313,6 +332,8 @@ class JobSearchPipeline:
             
             # Step 5: Filter and score
             console.print("[bold cyan]🎯 Step 5: Filtering relevant jobs...[/bold cyan]")
+            if progress_callback:
+                progress_callback("filtering", 85, {"message": "Scoring and filtering jobs..."})
             # Apply location filtering again (in case early filtering missed something)
             filtered = self.filter.filter_jobs(jobs, min_score=min_score, usa_only=True)
             summary["filtered"] = len(filtered)
@@ -320,6 +341,8 @@ class JobSearchPipeline:
             
             # Step 6: Save to database
             console.print("[bold cyan]💾 Step 6: Saving to database...[/bold cyan]")
+            if progress_callback:
+                progress_callback("saving", 92, {"message": "Saving jobs to database..."})
             # Get timestamp just before saving (with small buffer for safety)
             before_time = datetime.now() - timedelta(seconds=2)
             before_timestamp = before_time.isoformat()
@@ -328,6 +351,8 @@ class JobSearchPipeline:
             summary["saved"] = saved
             summary["skipped"] = skipped
             console.print(f"[green]Saved {saved} new jobs, skipped {skipped} duplicates[/green]\n")
+            if progress_callback:
+                progress_callback("saving", 98, {"jobs_saved": saved})
             
             # Get newly saved jobs (created after the before_timestamp)
             if saved > 0:

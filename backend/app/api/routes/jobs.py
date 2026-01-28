@@ -14,6 +14,36 @@ from app.schemas.job import JobResponse, JobUpdate, JobListResponse
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 
+def job_to_dict(job: Job) -> dict:
+    """Convert SQLAlchemy Job model to dict with defaults for None values."""
+    return {
+        'id': job.id,
+        'url': job.url,
+        'title': job.title,
+        'company': job.company,
+        'location': job.location,
+        'remote': job.remote if job.remote is not None else False,
+        'employment_type': job.employment_type,
+        'salary_range': job.salary_range,
+        'yoe_required': job.yoe_required or 0,
+        'required_skills': job.required_skills,
+        'nice_to_have_skills': job.nice_to_have_skills,
+        'responsibilities': job.responsibilities,
+        'job_summary': job.job_summary,
+        'date_posted': job.date_posted,
+        'source_domain': job.source_domain,
+        'relevance_score': job.relevance_score or 0,
+        'status': job.status if job.status is not None else "new",
+        'applied': job.applied if job.applied is not None else False,
+        'applied_date': job.applied_date,
+        'notes': job.notes,
+        'resume_id': job.resume_id,
+        'resume_url': job.resume_url,
+        'created_at': job.created_at,
+        'updated_at': job.updated_at,
+    }
+
+
 @router.get("", response_model=JobListResponse)
 async def get_jobs(
     status: Optional[str] = Query(None),
@@ -50,8 +80,11 @@ async def get_jobs(
     result = await db.execute(query)
     jobs = result.scalars().all()
     
+    # Convert jobs to response format, handling None values
+    job_responses = [JobResponse.model_validate(job_to_dict(job)) for job in jobs]
+    
     return JobListResponse(
-        jobs=[JobResponse.model_validate(job) for job in jobs],
+        jobs=job_responses,
         total=total,
         page=(offset // limit) + 1,
         pages=ceil(total / limit) if total > 0 else 0,
@@ -71,7 +104,7 @@ async def get_job(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     
-    return JobResponse.model_validate(job)
+    return JobResponse.model_validate(job_to_dict(job))
 
 
 @router.patch("/{job_id}", response_model=JobResponse)
@@ -95,7 +128,7 @@ async def update_job(
     await db.commit()
     await db.refresh(job)
     
-    return JobResponse.model_validate(job)
+    return JobResponse.model_validate(job_to_dict(job))
 
 
 @router.delete("/{job_id}")

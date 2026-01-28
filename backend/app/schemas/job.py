@@ -1,7 +1,7 @@
 """
 Job schemas for API validation.
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, List
 from datetime import date, datetime
 
@@ -11,7 +11,7 @@ class JobBase(BaseModel):
     title: str
     company: str
     location: Optional[str] = None
-    remote: bool = False
+    remote: Optional[bool] = False  # Optional to handle NULL values from old DB
     yoe_required: int = 0
     required_skills: Optional[List[str]] = None
     nice_to_have_skills: Optional[List[str]] = None
@@ -48,8 +48,8 @@ class JobResponse(JobBase):
     date_posted: Optional[date] = None
     source_domain: Optional[str] = None
     relevance_score: int
-    status: str
-    applied: bool
+    status: Optional[str] = "new"  # Optional to handle NULL values from old DB
+    applied: Optional[bool] = False  # Optional to handle NULL values from old DB
     applied_date: Optional[date] = None
     notes: Optional[str] = None
     resume_id: Optional[int] = None
@@ -59,6 +59,38 @@ class JobResponse(JobBase):
     
     class Config:
         from_attributes = True
+    
+    @model_validator(mode='before')
+    @classmethod
+    def set_defaults_for_none(cls, data):
+        """Set defaults for None values from database."""
+        # Handle SQLAlchemy model objects (when from_attributes=True)
+        if hasattr(data, '__dict__') and not isinstance(data, dict):
+            # Convert to dict and set defaults
+            result = {}
+            for key in cls.model_fields.keys():
+                try:
+                    value = getattr(data, key, None)
+                except AttributeError:
+                    value = None
+                if value is None:
+                    if key == 'remote':
+                        value = False
+                    elif key == 'status':
+                        value = "new"
+                    elif key == 'applied':
+                        value = False
+                result[key] = value
+            return result
+        # Handle dict input (Pydantic might convert SQLAlchemy to dict first)
+        elif isinstance(data, dict):
+            if data.get('remote') is None:
+                data['remote'] = False
+            if data.get('status') is None:
+                data['status'] = "new"
+            if data.get('applied') is None:
+                data['applied'] = False
+        return data
 
 
 class JobListResponse(BaseModel):

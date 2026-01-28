@@ -43,6 +43,7 @@ class JobDatabase:
         
         self._create_tables()
         self._migrate_schema()
+        self._create_indexes()  # Create indexes after migration
         logger.info(f"Database initialized: {db_path}")
     
     def __enter__(self):
@@ -159,14 +160,44 @@ class JobDatabase:
             )
         """)
         
-        # Create indexes for common queries
-        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_company ON jobs(company)")
-        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_yoe ON jobs(yoe_required)")
-        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_score ON jobs(relevance_score)")
-        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_applied ON jobs(applied)")
-        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_resume_job ON resumes(job_id)")
-        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_unextracted_url ON unextracted_jobs(url)")
-        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_unextracted_retry ON unextracted_jobs(retry_count)")
+        # Indexes are created after migration to ensure columns exist
+        # See _create_indexes() method
+    
+    def _create_indexes(self):
+        """Create indexes for common queries. Called after migration."""
+        try:
+            # Check if columns exist before creating indexes
+            self.cursor.execute("PRAGMA table_info(jobs)")
+            jobs_columns = {row[1] for row in self.cursor.fetchall()}
+            
+            # Only create indexes if the columns exist
+            if 'company' in jobs_columns:
+                self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_company ON jobs(company)")
+            if 'yoe_required' in jobs_columns:
+                self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_yoe ON jobs(yoe_required)")
+            if 'relevance_score' in jobs_columns:
+                self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_score ON jobs(relevance_score)")
+            if 'applied' in jobs_columns:
+                self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_applied ON jobs(applied)")
+            
+            # Resume indexes
+            try:
+                self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_resume_job ON resumes(job_id)")
+            except sqlite3.Error:
+                pass  # Table might not exist
+            
+            # Unextracted jobs indexes
+            try:
+                self.cursor.execute("PRAGMA table_info(unextracted_jobs)")
+                unextracted_columns = {row[1] for row in self.cursor.fetchall()}
+                self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_unextracted_url ON unextracted_jobs(url)")
+                if 'retry_count' in unextracted_columns:
+                    self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_unextracted_retry ON unextracted_jobs(retry_count)")
+            except sqlite3.Error:
+                pass  # Table might not exist
+        except sqlite3.Error as e:
+            logger.warning(f"Error creating indexes: {e}")
+            # Don't fail if indexes can't be created
     
     def _migrate_schema(self):
         """
@@ -222,13 +253,104 @@ class JobDatabase:
                     raise
             else:
                 logger.debug("'salary' column already exists, no migration needed")
+
+            # Ensure all expected jobs columns exist (older DBs may be missing many)
+            jobs_expected_columns: Dict[str, str] = {
+                # Core fields
+                "location": "TEXT",
+                "remote": "BOOLEAN",
+                "employment_type": "TEXT",
+                "yoe_required": "INTEGER DEFAULT 0",
+                "required_skills": "TEXT",
+                "nice_to_have_skills": "TEXT",
+                # Parsed details
+                "education": "TEXT",
+                "responsibilities": "TEXT",
+                "qualifications": "TEXT",
+                "benefits": "TEXT",
+                "job_summary": "TEXT",
+                "apply_url": "TEXT",
+                "source_domain": "TEXT",
+                # Scoring / tracking
+                "relevance_score": "INTEGER DEFAULT 0",
+                "applied": "BOOLEAN DEFAULT FALSE",
+                "saved": "BOOLEAN DEFAULT FALSE",
+                "notes": "TEXT",
+                "created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+                "updated_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+            }
+
+            for col, col_def in jobs_expected_columns.items():
+                if col in columns:
+                    continue
+                logger.warning(f"Migrating: Adding missing '{col}' column to jobs table")
+                try:
+                    self.cursor.execute(f"ALTER TABLE jobs ADD COLUMN {col} {col_def}")
+                    self.conn.commit()
+                    logger.info(f"✓ Migration complete: '{col}' column added successfully")
+                    # update local set so subsequent logic sees it
+                    columns.add(col)
+                except sqlite3.Error as alter_error:
+                    logger.error(f"Failed to add '{col}' column: {alter_error}")
+                    self.conn.rollback()
+            
+            # Check and migrate unextracted_jobs table
+            self.cursor.execute("""
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='unextracted_jobs'
+            """)
+            if self.cursor.fetchone():
+                self.cursor.execute("PRAGMA table_info(unextracted_jobs)")
+                unextracted_columns = {row[1] for row in self.cursor.fetchall()}
+                
+                # Handle extraction_methods_attempted column migration
+                if 'extraction_methods_attempted' not in unextracted_columns:
+                    logger.warning("Migrating: Adding missing 'extraction_methods_attempted' column to unextracted_jobs table")
+                    try:
+                        self.cursor.execute("ALTER TABLE unextracted_jobs ADD COLUMN extraction_methods_attempted TEXT")
+                        self.conn.commit()
+                        logger.info("✓ Migration complete: 'extraction_methods_attempted' column added successfully")
+                    except sqlite3.Error as alter_error:
+                        logger.error(f"Failed to add 'extraction_methods_attempted' column: {alter_error}")
+                        self.conn.rollback()
+                else:
+                    logger.debug("'extraction_methods_attempted' column already exists, no migration needed")
+
+                # Ensure all expected unextracted_jobs columns exist
+                unextracted_expected_columns: Dict[str, str] = {
+                    "title": "TEXT",
+                    "snippet": "TEXT",
+                    "source_domain": "TEXT",
+                    "error_message": "TEXT",
+                    "retry_count": "INTEGER DEFAULT 0",
+                    "created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+                    "updated_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+                }
+                for col, col_def in unextracted_expected_columns.items():
+                    if col in unextracted_columns:
+                        continue
+                    logger.warning(f"Migrating: Adding missing '{col}' column to unextracted_jobs table")
+                    try:
+                        self.cursor.execute(f"ALTER TABLE unextracted_jobs ADD COLUMN {col} {col_def}")
+                        self.conn.commit()
+                        logger.info(f"✓ Migration complete: '{col}' column added successfully")
+                        unextracted_columns.add(col)
+                    except sqlite3.Error as alter_error:
+                        logger.error(f"Failed to add '{col}' column: {alter_error}")
+                        self.conn.rollback()
+                    
         except sqlite3.Error as e:
             logger.error(f"Error during schema migration: {e}", exc_info=True)
             # Don't raise - allow the database to continue functioning
             # But log the error so we know what went wrong
-        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_prefilter_reason ON pre_filtered_jobs(filter_reason)")
-        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_skill_name ON skill_frequency(skill_name)")
-        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_skill_category ON skill_frequency(job_title_category)")
+        
+        # Create additional indexes
+        try:
+            self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_prefilter_reason ON pre_filtered_jobs(filter_reason)")
+            self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_skill_name ON skill_frequency(skill_name)")
+            self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_skill_category ON skill_frequency(job_title_category)")
+        except sqlite3.Error:
+            pass  # Tables might not exist yet
         
         self.conn.commit()
         logger.debug("Database tables created/verified")

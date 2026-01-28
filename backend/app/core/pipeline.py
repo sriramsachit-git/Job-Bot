@@ -51,9 +51,9 @@ class AsyncSearchPipeline:
         Returns:
             Summary dict with results
         """
-        # Update status callback
+        # Update status callback (committed so websocket polling can see it)
         async def update_status(step: str, progress: int, details: Dict[str, Any] = None):
-            await self._update_search_status(db, search_id, step, progress, details)
+            await self._update_search_status(search_id, step, progress, details)
         
         try:
             # Update status to running
@@ -122,6 +122,26 @@ class AsyncSearchPipeline:
         Note: Pipeline must be created inside the executor thread to avoid
         SQLite thread-safety issues (connections are thread-local).
         """
+        loop = asyncio.get_event_loop()
+        progress_queue: "asyncio.Queue[tuple[str, int, Optional[Dict[str, Any]]]]" = asyncio.Queue()
+
+        def _thread_progress(step: str, progress: int, details: Optional[Dict[str, Any]] = None):
+            # Called from executor thread; forward safely to event loop
+            loop.call_soon_threadsafe(progress_queue.put_nowait, (step, progress, details))
+
+        async def _consume_progress():
+            while True:
+                step, progress, details = await progress_queue.get()
+                if step == "__done__":
+                    return
+                try:
+                    await self._update_search_status(search_id, step, progress, details)
+                except Exception:
+                    # Don't kill the pipeline on progress update failure
+                    pass
+
+        consumer_task = asyncio.create_task(_consume_progress())
+
         def _run_pipeline_in_thread():
             """Create pipeline and run it in the executor thread."""
             # Create pipeline inside the executor thread so SQLite connection
@@ -132,12 +152,15 @@ class AsyncSearchPipeline:
                 domains,
                 filters.get("num_results", 50),
                 filters.get("date_restrict", "d1"),
-                filters.get("min_score", 30)
+                filters.get("min_score", 30),
+                progress_callback=_thread_progress
             )
         
         # Run pipeline in thread pool
-        loop = asyncio.get_event_loop()
         summary = await loop.run_in_executor(None, _run_pipeline_in_thread)
+        # Stop consumer
+        await progress_queue.put(("__done__", 0, None))
+        await consumer_task
         
         # Get newly saved jobs from the pipeline's database
         # and save them to async database
@@ -184,24 +207,27 @@ class AsyncSearchPipeline:
     
     async def _update_search_status(
         self,
-        db: AsyncSession,
         search_id: int,
         step: str,
         progress: int,
         details: Optional[Dict[str, Any]] = None
     ):
         """Update search session status."""
+        # Use a fresh session and COMMIT so websocket polling (separate sessions)
+        # can see progress updates immediately.
+        from app.database import AsyncSessionLocal
         try:
-            await db.execute(
-                update(SearchSession)
-                .where(SearchSession.id == search_id)
-                .values(
-                    status="running",
-                    current_step=step,
-                    progress=progress,
-                    **{k: v for k, v in (details or {}).items() if k in ["urls_found", "jobs_extracted", "jobs_parsed", "jobs_saved"]}
+            async with AsyncSessionLocal() as session:
+                await session.execute(
+                    update(SearchSession)
+                    .where(SearchSession.id == search_id)
+                    .values(
+                        status="running",
+                        current_step=step,
+                        progress=progress,
+                        **{k: v for k, v in (details or {}).items() if k in ["urls_found", "jobs_extracted", "jobs_parsed", "jobs_saved"]}
+                    )
                 )
-            )
-            await db.commit()
+                await session.commit()
         except Exception as e:
             logger.error(f"Error updating search status: {e}")

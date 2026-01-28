@@ -11,18 +11,33 @@ export default function Dashboard() {
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState<any>({});
 
-  const { data: stats, isLoading: statsLoading } = useQuery({
+  const { data: stats, isLoading: statsLoading, error: statsError } = useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: () => dashboardApi.getStats(),
   });
 
-  const { data: jobsData, isLoading: jobsLoading } = useQuery({
+  const { data: jobsData, isLoading: jobsLoading, error: jobsError } = useQuery({
     queryKey: ['jobs', { ...filters, limit: 50, offset: (page - 1) * 50 }],
     queryFn: () => jobsApi.getJobs({ ...filters, limit: 50, offset: (page - 1) * 50 }),
+    retry: 1,
   });
 
   if (statsLoading || jobsLoading) {
     return <div className="text-center py-12">Loading...</div>;
+  }
+
+  if (statsError || jobsError) {
+    return (
+      <div className="text-center py-12">
+        <div className="text-red-600 mb-4">Error loading data</div>
+        <div className="text-sm text-muted-foreground">
+          {statsError?.message || jobsError?.message || 'Unknown error'}
+        </div>
+        <Button onClick={() => window.location.reload()} className="mt-4">
+          Retry
+        </Button>
+      </div>
+    );
   }
 
   return (
