@@ -17,6 +17,10 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      '/health': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
       '/ws': {
         target: 'ws://localhost:8000',
         ws: true,
@@ -28,5 +32,7 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
     css: true,
+    // Do not let Vitest pick up Playwright specs.
+    exclude: ['tests/e2e/**', '**/tests/e2e/**'],
   },
 })

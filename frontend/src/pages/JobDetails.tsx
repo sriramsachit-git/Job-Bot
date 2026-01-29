@@ -20,6 +20,10 @@ export default function JobDetails() {
     mutationFn: () => resumesApi.generateResume(jobId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['job', jobId] });
+      queryClient.invalidateQueries({ queryKey: ['resumes'] });
+    },
+    onError: (error: any) => {
+      console.error('Resume generation error:', error);
     },
   });
 
@@ -90,6 +94,35 @@ export default function JobDetails() {
             </div>
           )}
 
+          {generateResumeMutation.isPending && (
+            <div className="bg-blue-50 border border-blue-200 rounded-md p-4 text-blue-800">
+              <strong>Generating resume...</strong>
+              <p className="text-sm mt-1">
+                This may take 30-60 seconds. Please wait while we tailor your resume to this job posting.
+              </p>
+            </div>
+          )}
+          {generateResumeMutation.isError && (
+            <div className="bg-red-50 border border-red-200 rounded-md p-4 text-red-800">
+              <strong>Error generating resume:</strong>
+              <p className="text-sm mt-1">
+                {generateResumeMutation.error?.response?.data?.detail || 
+                 generateResumeMutation.error?.message || 
+                 'Unknown error'}
+              </p>
+              {generateResumeMutation.error?.response?.data?.detail?.includes('not found') && (
+                <p className="text-xs mt-2 text-muted-foreground">
+                  Please create <code>data/resume_config.yaml</code> and <code>data/projects.json</code> files.
+                  See README.md for templates.
+                </p>
+              )}
+              {generateResumeMutation.error?.message?.includes('timeout') && (
+                <p className="text-xs mt-2 text-muted-foreground">
+                  Resume generation is taking longer than expected. Please try again or check backend logs.
+                </p>
+              )}
+            </div>
+          )}
           <div className="flex gap-4 pt-4">
             <Button
               onClick={() => generateResumeMutation.mutate()}
@@ -102,9 +135,27 @@ export default function JobDetails() {
                 : 'Generate Resume'}
             </Button>
             {job.resume_url && (
-              <a href={job.resume_url} target="_blank" rel="noopener noreferrer">
+              <a 
+                href={job.resume_url} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                onClick={(e) => {
+                  // Log for debugging
+                  console.log('Downloading resume:', job.resume_url);
+                  // If it's a relative URL, make sure it's correct
+                  if (job.resume_url && !job.resume_url.startsWith('http')) {
+                    // Relative URL should work, but log it
+                    console.log('Using relative URL:', job.resume_url);
+                  }
+                }}
+              >
                 <Button variant="outline">Download Resume</Button>
               </a>
+            )}
+            {job.resume_id && !job.resume_url && (
+              <div className="text-sm text-muted-foreground">
+                Resume generated but download URL not available. Resume ID: {job.resume_id}
+              </div>
             )}
             <a href={job.url} target="_blank" rel="noopener noreferrer">
               <Button variant="outline">View Original Posting</Button>

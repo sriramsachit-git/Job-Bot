@@ -30,10 +30,10 @@ export default function JobsTable({
   limit = 50,
 }: JobsTableProps) {
   const [filters, setFilters] = useState({
-    status: '',
+    status: 'all',
     minScore: '',
     maxYoe: '',
-    remote: '',
+    remote: 'all',
     search: '',
   });
   const [sortField, setSortField] = useState<SortField>('relevance_score');
@@ -44,7 +44,7 @@ export default function JobsTable({
     setFilters(newFilters);
     if (onFilterChange) {
       onFilterChange({
-        status: newFilters.status || undefined,
+        status: newFilters.status && newFilters.status !== 'all' ? newFilters.status : undefined,
         min_score: newFilters.minScore ? parseInt(newFilters.minScore) : undefined,
         max_yoe: newFilters.maxYoe ? parseInt(newFilters.maxYoe) : undefined,
         remote: newFilters.remote === 'true' ? true : newFilters.remote === 'false' ? false : undefined,
@@ -124,7 +124,7 @@ export default function JobsTable({
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All Status</SelectItem>
+            <SelectItem value="all">All Status</SelectItem>
             <SelectItem value="new">New</SelectItem>
             <SelectItem value="reviewed">Reviewed</SelectItem>
             <SelectItem value="applied">Applied</SelectItem>
@@ -148,7 +148,7 @@ export default function JobsTable({
             <SelectValue placeholder="Remote" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All</SelectItem>
+            <SelectItem value="all">All</SelectItem>
             <SelectItem value="true">Remote Only</SelectItem>
             <SelectItem value="false">On-site Only</SelectItem>
           </SelectContent>

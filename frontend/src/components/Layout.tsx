@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { Briefcase, Search, Settings } from 'lucide-react';
+import BackendStatus from './BackendStatus';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -18,6 +19,7 @@ export default function Layout({ children }: LayoutProps) {
               <Briefcase className="h-6 w-6" />
               <span className="text-xl font-bold">Job Search Pipeline</span>
             </Link>
+            <BackendStatus />
             <nav className="flex items-center gap-4">
               <Link
                 to="/"

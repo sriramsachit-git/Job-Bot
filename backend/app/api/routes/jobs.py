@@ -137,13 +137,16 @@ async def delete_job(
     db: AsyncSession = Depends(get_database)
 ):
     """Delete a job."""
+    from sqlalchemy import delete
+    
     result = await db.execute(select(Job).where(Job.id == job_id))
     job = result.scalar_one_or_none()
     
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     
-    await db.delete(job)
+    # Use delete statement for async SQLAlchemy
+    await db.execute(delete(Job).where(Job.id == job_id))
     await db.commit()
     
     return {"success": True}

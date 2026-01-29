@@ -109,7 +109,7 @@ database_url: str         # SQLALCHEMY_DATABASE_URL (default: "sqlite+aiosqlite:
 
 # Paths (Path objects)
 data_dir: Path            # Default: Path("./data")
-resumes_dir: Path         # Default: Path("./data/resumes")
+resumes_dir: Path         # RESUMES_DIR; default: project root data/resumes (absolute). Single directory for all resume PDFs.
 
 # Cloud Storage
 cloud_storage_provider: str  # CLOUD_STORAGE_PROVIDER (default: "local")

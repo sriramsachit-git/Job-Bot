@@ -9,7 +9,37 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 10000, // 10 second timeout
 });
+
+// Add request interceptor for debugging
+api.interceptors.request.use(
+  (config) => {
+    console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`);
+    return config;
+  },
+  (error) => {
+    console.error('[API] Request error:', error);
+    return Promise.reject(error);
+  }
+);
+
+// Add response interceptor for debugging
+api.interceptors.response.use(
+  (response) => {
+    console.log(`[API] ${response.status} ${response.config.url}`);
+    return response;
+  },
+  (error) => {
+    console.error('[API] Response error:', {
+      url: error.config?.url,
+      status: error.response?.status,
+      message: error.message,
+      data: error.response?.data,
+    });
+    return Promise.reject(error);
+  }
+);
 
 // Jobs API
 export const jobsApi = {
@@ -74,15 +104,21 @@ export const searchApi = {
 // Resumes API
 export const resumesApi = {
   generateResume: async (jobId: number, selectedProjects?: string[]): Promise<Resume> => {
+    // Resume generation can take 30+ seconds, so use a longer timeout
     const response = await api.post('/resumes', {
       job_id: jobId,
       selected_projects: selectedProjects,
+    }, {
+      timeout: 60000, // 60 second timeout for resume generation
     });
     return response.data;
   },
 
   bulkGenerateResumes: async (jobIds: number[]) => {
-    const response = await api.post('/resumes/bulk-generate', jobIds);
+    // Bulk generation can take even longer, use extended timeout
+    const response = await api.post('/resumes/bulk-generate', jobIds, {
+      timeout: 300000, // 5 minute timeout for bulk generation
+    });
     return response.data;
   },
 

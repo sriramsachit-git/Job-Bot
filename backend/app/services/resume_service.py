@@ -10,10 +10,14 @@ from sqlalchemy import select
 from app.models.job import Job
 from app.models.resume import Resume
 from app.schemas.resume import ResumeCreate, ResumeResponse
-from src.resume_generator import ResumeGenerator
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Get project root (go up from backend/app/services/ to project root)
+# File is at: backend/app/services/resume_service.py
+# Need to go: services -> app -> backend -> project_root
+PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.resolve()
 
 
 class ResumeService:
@@ -21,11 +25,39 @@ class ResumeService:
     
     def __init__(self):
         """Initialize resume service."""
-        self.generator = ResumeGenerator(
-            config_path="data/resume_config.yaml",
-            projects_path="data/projects.json",
-            output_dir=str(settings.resumes_dir)
-        )
+        # Lazy-load generator only when needed (to avoid errors if files don't exist)
+        self._generator = None
+        self._config_path = PROJECT_ROOT / "data" / "resume_config.yaml"
+        self._projects_path = PROJECT_ROOT / "data" / "projects.json"
+    
+    @property
+    def generator(self):
+        """Lazy-load ResumeGenerator, checking for required files first."""
+        if self._generator is None:
+            # Check if config files exist
+            if not self._config_path.exists():
+                raise ValueError(
+                    f"Resume config file not found: {self._config_path}\n"
+                    f"Please create {self._config_path} with your resume information.\n"
+                    f"See README.md for template."
+                )
+            if not self._projects_path.exists():
+                raise ValueError(
+                    f"Projects file not found: {self._projects_path}\n"
+                    f"Please create {self._projects_path} with your project information.\n"
+                    f"See README.md for template."
+                )
+            
+            # Import here to avoid heavy imports at module level
+            from src.resume_generator import ResumeGenerator
+            
+            # Single output dir (absolute) so all PDFs go to one place
+            self._generator = ResumeGenerator(
+                config_path=str(self._config_path),
+                projects_path=str(self._projects_path),
+                output_dir=str(settings.resumes_dir.resolve()),
+            )
+        return self._generator
     
     async def generate_resume(
         self,
@@ -85,9 +117,20 @@ class ResumeService:
         results = self.generator.generate_resumes([rec])
         
         if not results or not results[0].get("success"):
-            raise ValueError("Failed to generate resume")
+            error_msg = results[0].get("error", "Unknown error") if results else "No results returned"
+            logger.error(f"Resume generation failed: {error_msg}")
+            raise ValueError(f"Failed to generate resume: {error_msg}")
         
         result_data = results[0]
+        
+        # Store only filename in DB (Option C: single base dir, resolve at download time)
+        raw_pdf = result_data.get("pdf_path")
+        raw_tex = result_data.get("tex_path")
+        pdf_path = Path(raw_pdf).name if raw_pdf else None
+        tex_path = Path(raw_tex).name if raw_tex else None
+        
+        if pdf_path and not (settings.resumes_dir / pdf_path).exists():
+            logger.warning(f"PDF not in base dir: {settings.resumes_dir / pdf_path}")
         
         # Create resume record
         resume = Resume(
@@ -96,8 +139,8 @@ class ResumeService:
             company=job.company,
             resume_location=result_data.get("resume_location"),
             selected_projects=selected_projects,
-            tex_path=result_data.get("tex_path"),
-            pdf_path=result_data.get("pdf_path"),
+            tex_path=tex_path,
+            pdf_path=pdf_path,
             cloud_url=None  # Will be set after upload
         )
         
@@ -106,9 +149,19 @@ class ResumeService:
         await db.refresh(resume)
         
         # Update job with resume URL
+        # Always set resume_url to the download endpoint (it will handle missing pdf_path)
+        resume_download_url = None
+        if resume.cloud_url:
+            resume_download_url = resume.cloud_url
+        else:
+            # Use resume_id-based download endpoint (will try to find PDF even if pdf_path is None)
+            resume_download_url = f"/api/resumes/{resume.id}/download"
+        
         job.resume_id = resume.id
-        job.resume_url = resume.cloud_url or resume.pdf_path
+        job.resume_url = resume_download_url
         await db.commit()
+        
+        logger.info(f"Set resume_url for job {job.id}: {resume_download_url}")
         
         return ResumeResponse(
             id=resume.id,

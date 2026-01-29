@@ -85,17 +85,18 @@ async def health():
 
 @app.get("/api/resumes/download/{filename}")
 async def download_resume(filename: str):
-    """Download resume PDF."""
-    resume_path = settings.resumes_dir / filename
-    if resume_path.exists():
-        return FileResponse(
-            str(resume_path),
-            media_type="application/pdf",
-            filename=filename
+    """Download resume PDF by filename. Served from single base dir (no path traversal)."""
+    safe_name = Path(filename).name
+    resume_path = settings.resumes_dir / safe_name
+    if not resume_path.exists():
+        return JSONResponse(
+            status_code=404,
+            content={"error": f"Resume not found: {safe_name}"}
         )
-    return JSONResponse(
-        status_code=404,
-        content={"error": "Resume not found"}
+    return FileResponse(
+        str(resume_path),
+        media_type="application/pdf",
+        filename=safe_name,
     )
 
 

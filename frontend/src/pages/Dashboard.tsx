@@ -14,24 +14,41 @@ export default function Dashboard() {
   const { data: stats, isLoading: statsLoading, error: statsError } = useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: () => dashboardApi.getStats(),
+    retry: 1,
+    // Keep showing loading state even if one query fails
+    refetchOnWindowFocus: false,
   });
 
   const { data: jobsData, isLoading: jobsLoading, error: jobsError } = useQuery({
     queryKey: ['jobs', { ...filters, limit: 50, offset: (page - 1) * 50 }],
     queryFn: () => jobsApi.getJobs({ ...filters, limit: 50, offset: (page - 1) * 50 }),
     retry: 1,
+    refetchOnWindowFocus: false,
   });
 
-  if (statsLoading || jobsLoading) {
+  // Log errors for debugging
+  if (statsError) {
+    console.error('Dashboard stats error:', statsError);
+  }
+  if (jobsError) {
+    console.error('Jobs API error:', jobsError);
+  }
+
+  // Show loading only if BOTH are loading
+  if (statsLoading && jobsLoading) {
     return <div className="text-center py-12">Loading...</div>;
   }
 
-  if (statsError || jobsError) {
+  // Show error only if BOTH failed (or show partial data if one succeeds)
+  if (statsError && jobsError && !statsLoading && !jobsLoading) {
     return (
       <div className="text-center py-12">
         <div className="text-red-600 mb-4">Error loading data</div>
-        <div className="text-sm text-muted-foreground">
+        <div className="text-sm text-muted-foreground mb-2">
           {statsError?.message || jobsError?.message || 'Unknown error'}
+        </div>
+        <div className="text-xs text-muted-foreground mb-4">
+          Make sure the backend is running on http://localhost:8000
         </div>
         <Button onClick={() => window.location.reload()} className="mt-4">
           Retry
@@ -102,15 +119,22 @@ export default function Dashboard() {
           <CardTitle>All Jobs</CardTitle>
         </CardHeader>
         <CardContent>
-          <JobsTable
-            jobs={jobsData?.jobs || []}
-            onFilterChange={setFilters}
-            onPageChange={setPage}
-            total={jobsData?.total || 0}
-            page={jobsData?.page || 1}
-            pages={jobsData?.pages || 1}
-            limit={50}
-          />
+          {jobsError && !jobsLoading ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <div className="text-red-600 mb-2">Failed to load jobs</div>
+              <div className="text-sm">{jobsError.message || 'Unknown error'}</div>
+            </div>
+          ) : (
+            <JobsTable
+              jobs={jobsData?.jobs || []}
+              onFilterChange={setFilters}
+              onPageChange={setPage}
+              total={jobsData?.total || 0}
+              page={jobsData?.page || 1}
+              pages={jobsData?.pages || 1}
+              limit={50}
+            />
+          )}
         </CardContent>
       </Card>
     </div>

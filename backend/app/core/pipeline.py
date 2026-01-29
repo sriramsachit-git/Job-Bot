@@ -12,8 +12,6 @@ from sqlalchemy import select, update
 from app.models.search_session import SearchSession
 from app.models.job import Job
 from app.services.job_service import JobService
-from src.pipeline import JobSearchPipeline
-from src.llm_parser import ParsedJob
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +142,10 @@ class AsyncSearchPipeline:
 
         def _run_pipeline_in_thread():
             """Create pipeline and run it in the executor thread."""
+            # Import here (lazy) so importing the FastAPI app does NOT
+            # import heavy deps (pandas/numpy) unless a search is actually run.
+            from src.pipeline import JobSearchPipeline
+
             # Create pipeline inside the executor thread so SQLite connection
             # is created and used in the same thread
             pipeline = JobSearchPipeline()
