@@ -4,11 +4,22 @@ Search API routes.
 import logging
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 import json
+from typing import List
 
 from app.api.deps import get_database
 from app.services.search_service import SearchService
-from app.schemas.search import SearchStart, SearchStatus, SearchResults
+from app.schemas.search import (
+    SearchStart,
+    SearchStatus,
+    SearchResults,
+    PreFilteredJobItem,
+    UnextractedJobItem,
+)
+from app.models.search_session import SearchSession
+from app.models.pre_filtered_job import PreFilteredJob
+from app.models.unextracted_job import UnextractedJob
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/search", tags=["search"])
@@ -53,6 +64,70 @@ async def get_search_results(
         raise HTTPException(status_code=404, detail="Search not found")
     
     return results
+
+
+@router.get("/{search_id}/prefiltered", response_model=List[PreFilteredJobItem])
+async def get_pre_filtered_jobs(
+    search_id: int,
+    db: AsyncSession = Depends(get_database),
+):
+    """Get jobs excluded by pre-filtering for this search (time-windowed by started_at)."""
+    session_result = await db.execute(select(SearchSession).where(SearchSession.id == search_id))
+    session = session_result.scalar_one_or_none()
+    if not session or not session.started_at:
+        raise HTTPException(status_code=404, detail="Search not found")
+
+    result = await db.execute(
+        select(PreFilteredJob)
+        .where(PreFilteredJob.created_at >= session.started_at)
+        .order_by(PreFilteredJob.created_at.desc())
+        .limit(500)
+    )
+    rows = result.scalars().all()
+    return [
+        PreFilteredJobItem(
+            url=r.url,
+            title=r.title,
+            snippet=r.snippet,
+            source_domain=r.source_domain,
+            filter_reason=r.filter_reason,
+            filter_details=r.filter_details,
+            created_at=r.created_at,
+        )
+        for r in rows
+    ]
+
+
+@router.get("/{search_id}/unextracted", response_model=List[UnextractedJobItem])
+async def get_unextracted_jobs(
+    search_id: int,
+    db: AsyncSession = Depends(get_database),
+):
+    """Get URLs that failed extraction for this search (time-windowed by started_at)."""
+    session_result = await db.execute(select(SearchSession).where(SearchSession.id == search_id))
+    session = session_result.scalar_one_or_none()
+    if not session or not session.started_at:
+        raise HTTPException(status_code=404, detail="Search not found")
+
+    result = await db.execute(
+        select(UnextractedJob)
+        .where(UnextractedJob.created_at >= session.started_at)
+        .order_by(UnextractedJob.created_at.desc())
+        .limit(500)
+    )
+    rows = result.scalars().all()
+    return [
+        UnextractedJobItem(
+            url=r.url,
+            title=r.title,
+            snippet=r.snippet,
+            source_domain=r.source_domain,
+            error_message=r.error_message,
+            retry_count=r.retry_count,
+            created_at=r.created_at,
+        )
+        for r in rows
+    ]
 
 
 @router.post("/cancel/{search_id}")

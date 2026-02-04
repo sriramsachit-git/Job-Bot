@@ -1,8 +1,13 @@
-import { useState } from 'react';
 import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { X, Plus } from 'lucide-react';
-import { Badge } from '../ui/badge';
+import { Checkbox } from '../ui/checkbox';
+import { Label } from '../ui/label';
+
+const DEFAULT_JOB_TITLES = [
+  'Data Scientist',
+  'AI engineer',
+  'ML engineer',
+  'Data engineer',
+];
 
 interface JobTitleSelectorProps {
   config: {
@@ -14,30 +19,32 @@ interface JobTitleSelectorProps {
 }
 
 export default function JobTitleSelector({ config, onChange }: JobTitleSelectorProps) {
-  const [inputValue, setInputValue] = useState('');
-
-  const addJobTitle = () => {
-    if (inputValue.trim() && !config.jobTitles.includes(inputValue.trim())) {
+  const toggleTitle = (title: string) => {
+    if (config.jobTitles.includes(title)) {
       onChange({
         ...config,
-        jobTitles: [...config.jobTitles, inputValue.trim()],
+        jobTitles: config.jobTitles.filter((t) => t !== title),
       });
-      setInputValue('');
+    } else {
+      onChange({
+        ...config,
+        jobTitles: [...config.jobTitles, title],
+      });
     }
   };
 
-  const removeJobTitle = (title: string) => {
+  const selectAll = () => {
     onChange({
       ...config,
-      jobTitles: config.jobTitles.filter((t) => t !== title),
+      jobTitles: [...DEFAULT_JOB_TITLES],
     });
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      addJobTitle();
-    }
+  const deselectAll = () => {
+    onChange({
+      ...config,
+      jobTitles: [],
+    });
   };
 
   return (
@@ -45,46 +52,37 @@ export default function JobTitleSelector({ config, onChange }: JobTitleSelectorP
       <div>
         <h2 className="text-xl font-semibold mb-4">Step 1: Select Job Titles</h2>
         <p className="text-muted-foreground mb-4">
-          Enter the job titles you want to search for. You can add multiple titles.
+          Choose the job titles you want to search for. Select at least one.
         </p>
       </div>
 
-      <div className="flex gap-2">
-        <Input
-          placeholder="e.g., AI Engineer, ML Engineer"
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          onKeyPress={handleKeyPress}
-          className="flex-1"
-        />
-        <Button onClick={addJobTitle} type="button">
-          <Plus className="h-4 w-4 mr-2" />
-          Add
+      <div className="flex gap-2 mb-4">
+        <Button variant="outline" onClick={selectAll} size="sm">
+          Select All
+        </Button>
+        <Button variant="outline" onClick={deselectAll} size="sm">
+          Deselect All
         </Button>
       </div>
 
-      {config.jobTitles.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-sm font-medium">Selected Job Titles:</p>
-          <div className="flex flex-wrap gap-2">
-            {config.jobTitles.map((title) => (
-              <Badge key={title} variant="secondary" className="flex items-center gap-2">
-                {title}
-                <button
-                  onClick={() => removeJobTitle(title)}
-                  className="hover:text-destructive"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </Badge>
-            ))}
+      <div className="space-y-3">
+        {DEFAULT_JOB_TITLES.map((title) => (
+          <div key={title} className="flex items-center space-x-2">
+            <Checkbox
+              id={title}
+              checked={config.jobTitles.includes(title)}
+              onCheckedChange={() => toggleTitle(title)}
+            />
+            <Label htmlFor={title} className="cursor-pointer font-normal">
+              {title}
+            </Label>
           </div>
-        </div>
-      )}
+        ))}
+      </div>
 
       {config.jobTitles.length === 0 && (
-        <p className="text-sm text-muted-foreground">
-          Add at least one job title to continue.
+        <p className="text-sm text-muted-foreground mt-4">
+          Select at least one job title to continue.
         </p>
       )}
     </div>

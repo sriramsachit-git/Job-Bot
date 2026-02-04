@@ -120,27 +120,26 @@ if [ "$INSTALL_DEPS" = true ]; then
     fi
 fi
 
-# Run Backend Integration Tests
+# Run Backend Integration Tests (from project root so conftest path setup works)
 if [ "$RUN_INTEGRATION" = true ]; then
     echo ""
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${YELLOW}Running Backend Integration Tests${NC}"
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     
-    cd backend
-    if [ -d "venv" ]; then
-        source venv/bin/activate
+    # Use backend/venv if present (has pytest + deps); otherwise current env must have them
+    if [ -d "backend/venv" ]; then
+        source backend/venv/bin/activate
     fi
     
-    # Set test database
     export DATABASE_URL="sqlite+aiosqlite:///./data/test_api.db"
-    
-    pytest ../tests/integration/ -v --tb=short
+    # Run from project root; conftest adds backend to path
+    python -m pytest tests/integration/ -v --tb=short
     BACKEND_TEST_EXIT=$?
-    cd ..
     
     if [ $BACKEND_TEST_EXIT -ne 0 ]; then
         echo -e "${RED}✗ Backend integration tests failed${NC}"
+        echo -e "${YELLOW}Tip: install deps with ./run_tests.sh --install-deps or: pip install pytest pytest-asyncio httpx aiosqlite${NC}"
         exit 1
     fi
     echo -e "${GREEN}✓ Backend integration tests passed${NC}"
@@ -181,14 +180,12 @@ if [ "$RUN_UNIT" = true ]; then
     echo -e "${YELLOW}Running Unit Tests${NC}"
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     
-    # Backend unit tests
-    if [ -d "tests" ] && [ -f "tests/test_*.py" ]; then
-        cd backend
-        if [ -d "venv" ]; then
-            source venv/bin/activate
+    # Backend unit tests (from project root)
+    if [ -d "tests" ]; then
+        if [ -d "backend/venv" ]; then
+            source backend/venv/bin/activate
         fi
-        pytest ../tests/test_*.py -v --tb=short || true
-        cd ..
+        python -m pytest tests/test_backend.py tests/test_parser.py tests/test_storage.py tests/test_structure.py tests/test_quick.py -v --tb=short || true
     fi
     
     # Frontend unit tests

@@ -14,7 +14,13 @@ export default function NewSearch() {
   const [searchConfig, setSearchConfig] = useState({
     jobTitles: [] as string[],
     domains: [] as string[],
-    filters: { maxYoe: 5, remoteOnly: false, locations: [] as string[] },
+    filters: {
+      maxYoe: 5,
+      remoteOnly: false,
+      locations: [] as string[],
+      numResults: 100,
+      maxExtractionBatch: '' as number | '',
+    },
   });
   const [searchId, setSearchId] = useState<number | null>(null);
 
@@ -23,7 +29,17 @@ export default function NewSearch() {
       const result = await searchApi.startSearch({
         job_titles: searchConfig.jobTitles,
         domains: searchConfig.domains,
-        filters: searchConfig.filters,
+        filters: {
+          max_yoe: searchConfig.filters.maxYoe,
+          remote_only: searchConfig.filters.remoteOnly,
+          locations: searchConfig.filters.locations,
+          num_results: searchConfig.filters.numResults,
+          max_extraction_batch:
+            searchConfig.filters.maxExtractionBatch === '' ||
+            searchConfig.filters.maxExtractionBatch === undefined
+              ? undefined
+              : Number(searchConfig.filters.maxExtractionBatch),
+        },
       });
       setSearchId(result.search_id);
       setStep(3);

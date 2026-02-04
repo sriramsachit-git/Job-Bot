@@ -41,3 +41,25 @@ class SearchResults(BaseModel):
     search_id: int
     jobs: List[Dict[str, Any]]  # List of job dictionaries
     total: int
+
+
+class PreFilteredJobItem(BaseModel):
+    """Pre-filtered job (excluded before LLM parsing)."""
+    url: str
+    title: Optional[str] = None
+    snippet: Optional[str] = None
+    source_domain: Optional[str] = None
+    filter_reason: Optional[str] = None
+    filter_details: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class UnextractedJobItem(BaseModel):
+    """Job URL that failed extraction."""
+    url: str
+    title: Optional[str] = None
+    snippet: Optional[str] = None
+    source_domain: Optional[str] = None
+    error_message: Optional[str] = None
+    retry_count: Optional[int] = None
+    created_at: Optional[datetime] = None

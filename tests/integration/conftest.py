@@ -4,6 +4,7 @@ Pytest configuration for integration tests.
 Key goals:
 - Make `backend/app` importable as `app` when pytest runs from repo root
 - Ensure tests use an isolated SQLite DB by default
+- Force pytest-asyncio to load so async fixtures (db_session, client) are handled
 """
 
 from __future__ import annotations
@@ -11,6 +12,9 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+
+# Force pytest-asyncio plugin to load (fixes "async fixture with no plugin" on pytest 8+/9)
+pytest_plugins = ("pytest_asyncio",)
 
 
 # Repo root: .../job_search_pipeline
@@ -26,8 +30,13 @@ os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./data/test_api.db")
 
 import pytest
 import httpx
+import warnings
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.pool import NullPool
+
+# Unclosed SSL socket warnings: background HTTP clients (e.g. pipeline/Google API) may
+# leave connections open when tests exit. Harmless for tests; filter to reduce noise.
+warnings.filterwarnings("ignore", category=ResourceWarning, message="unclosed.*ssl.SSLSocket")
 
 # Import after sys.path is fixed above
 from app.main import app  # type: ignore

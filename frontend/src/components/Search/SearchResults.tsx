@@ -6,7 +6,7 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Checkbox } from '../ui/checkbox';
 import { useState } from 'react';
-import { MapPin, Calendar, FileText } from 'lucide-react';
+import { MapPin, Calendar, FileText, Link as LinkIcon } from 'lucide-react';
 
 interface SearchResultsProps {
   searchId: number;
@@ -20,6 +20,18 @@ export default function SearchResults({ searchId }: SearchResultsProps) {
   const { data: results, isLoading } = useQuery({
     queryKey: ['search-results', searchId],
     queryFn: () => searchApi.getSearchResults(searchId),
+  });
+
+  const { data: preFiltered } = useQuery({
+    queryKey: ['search-prefiltered', searchId],
+    queryFn: () => searchApi.getPreFiltered(searchId),
+    enabled: !!searchId,
+  });
+
+  const { data: unextracted } = useQuery({
+    queryKey: ['search-unextracted', searchId],
+    queryFn: () => searchApi.getUnextracted(searchId),
+    enabled: !!searchId,
   });
 
   const bulkGenerateMutation = useMutation({
@@ -128,9 +140,28 @@ export default function SearchResults({ searchId }: SearchResultsProps) {
                     )}
                     <div className="flex items-center gap-1">
                       <Calendar className="h-4 w-4" />
-                      {job.yoe_required} YOE
+                      {job.date_posted || job.created_at
+                        ? new Date(job.date_posted || job.created_at).toLocaleDateString()
+                        : 'Date N/A'}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="font-medium text-foreground/70">YOE:</span> {job.yoe_required}
                     </div>
                   </div>
+
+                  {job.url && (
+                    <div className="flex items-center gap-2 text-sm mb-3">
+                      <LinkIcon className="h-4 w-4 text-muted-foreground" />
+                      <a
+                        href={job.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline break-all"
+                      >
+                        {job.url}
+                      </a>
+                    </div>
+                  )}
 
                   {job.required_skills && job.required_skills.length > 0 && (
                     <div className="mb-3">
@@ -178,6 +209,85 @@ export default function SearchResults({ searchId }: SearchResultsProps) {
             </CardContent>
           </Card>
         ))}
+      </div>
+
+      {/* Post-run diagnostics */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              Pre-filtered (excluded before LLM) ({Array.isArray(preFiltered) ? preFiltered.length : 0})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {!preFiltered || preFiltered.length === 0 ? (
+              <p className="text-sm text-muted-foreground">None</p>
+            ) : (
+              <div className="space-y-3">
+                {preFiltered.slice(0, 50).map((item: any) => (
+                  <div key={item.url} className="text-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <a
+                        href={item.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline break-all"
+                      >
+                        {item.title || item.url}
+                      </a>
+                      {item.filter_reason && <Badge variant="secondary">{item.filter_reason}</Badge>}
+                    </div>
+                    {item.filter_details && (
+                      <div className="text-xs text-muted-foreground mt-1">{item.filter_details}</div>
+                    )}
+                  </div>
+                ))}
+                {preFiltered.length > 50 && (
+                  <p className="text-xs text-muted-foreground">Showing first 50.</p>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              Unextracted (failed to fetch content) ({Array.isArray(unextracted) ? unextracted.length : 0})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {!unextracted || unextracted.length === 0 ? (
+              <p className="text-sm text-muted-foreground">None</p>
+            ) : (
+              <div className="space-y-3">
+                {unextracted.slice(0, 50).map((item: any) => (
+                  <div key={item.url} className="text-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <a
+                        href={item.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline break-all"
+                      >
+                        {item.title || item.url}
+                      </a>
+                      {typeof item.retry_count === 'number' && (
+                        <Badge variant="secondary">retries: {item.retry_count}</Badge>
+                      )}
+                    </div>
+                    {item.error_message && (
+                      <div className="text-xs text-muted-foreground mt-1">{item.error_message}</div>
+                    )}
+                  </div>
+                ))}
+                {unextracted.length > 50 && (
+                  <p className="text-xs text-muted-foreground">Showing first 50.</p>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

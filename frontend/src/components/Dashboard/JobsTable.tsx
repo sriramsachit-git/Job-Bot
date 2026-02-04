@@ -17,7 +17,7 @@ interface JobsTableProps {
   limit?: number;
 }
 
-type SortField = 'title' | 'company' | 'location' | 'yoe_required' | 'relevance_score' | 'created_at';
+type SortField = 'title' | 'company' | 'location' | 'yoe_required' | 'relevance_score' | 'date_posted' | 'created_at';
 type SortDirection = 'asc' | 'desc';
 
 export default function JobsTable({
@@ -65,9 +65,9 @@ export default function JobsTable({
     let aVal: any = a[sortField];
     let bVal: any = b[sortField];
 
-    if (sortField === 'created_at') {
-      aVal = new Date(aVal).getTime();
-      bVal = new Date(bVal).getTime();
+    if (sortField === 'created_at' || sortField === 'date_posted') {
+      aVal = (aVal && new Date(aVal).getTime()) || 0;
+      bVal = (bVal && new Date(bVal).getTime()) || 0;
     }
 
     if (typeof aVal === 'string') {
@@ -175,6 +175,12 @@ export default function JobsTable({
               <th className="text-left p-3">
                 <SortButton field="relevance_score">Score</SortButton>
               </th>
+              <th className="text-left p-3">
+                <SortButton field="date_posted">Date Posted</SortButton>
+              </th>
+              <th className="text-left p-3">
+                <SortButton field="created_at">Date Added</SortButton>
+              </th>
               <th className="text-left p-3">Resume</th>
               <th className="text-left p-3">Applied</th>
               <th className="text-left p-3">Actions</th>
@@ -196,6 +202,24 @@ export default function JobsTable({
                 <td className="p-3">{job.yoe_required}</td>
                 <td className="p-3">
                   <Badge>{job.relevance_score}</Badge>
+                </td>
+                <td className="p-3 text-muted-foreground text-sm">
+                  {job.date_posted
+                    ? new Date(job.date_posted).toLocaleDateString(undefined, {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                      })
+                    : '—'}
+                </td>
+                <td className="p-3 text-muted-foreground text-sm">
+                  {job.created_at
+                    ? new Date(job.created_at).toLocaleDateString(undefined, {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                      })
+                    : '—'}
                 </td>
                 <td className="p-3">
                   {job.resume_url ? (

@@ -3,13 +3,13 @@ import { test, expect } from '@playwright/test';
 test.describe('Dashboard', () => {
   test('loads and shows stats cards', async ({ page }) => {
     await page.goto('/');
-    // Wait for React to mount something (blank white page => app didn't render yet)
+    // Wait for React to mount
     await expect(page.getByRole('heading', { name: 'Job Search Dashboard' })).toBeVisible({ timeout: 20000 });
 
-    // Backend calls can be slow on first boot; wait for either stats response or the error UI.
+    // Wait for either success (stats cards) or error UI; avoid depending on exact 200 response timing
     await Promise.race([
-      page.waitForResponse((r) => r.url().includes('/api/dashboard/stats') && r.status() === 200, { timeout: 20000 }),
-      page.getByText(/Error loading data/i).waitFor({ timeout: 20000 }),
+      page.getByText('Total Jobs').waitFor({ state: 'visible', timeout: 30000 }),
+      page.getByText(/Error loading data/i).waitFor({ state: 'visible', timeout: 30000 }),
     ]);
 
     await expect(page.getByText('Total Jobs')).toBeVisible();

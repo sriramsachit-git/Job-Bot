@@ -121,6 +121,7 @@ class SearchService:
         jobs_list = [
             {
                 "id": job.id,
+                "url": job.url,
                 "title": job.title,
                 "company": job.company,
                 "location": job.location,
@@ -128,7 +129,9 @@ class SearchService:
                 "yoe_required": job.yoe_required,
                 "relevance_score": job.relevance_score,
                 "required_skills": job.required_skills,
-                "resume_url": job.resume_url
+                "resume_url": job.resume_url,
+                "date_posted": job.date_posted.isoformat() if job.date_posted else None,
+                "created_at": job.created_at.isoformat() if job.created_at else None,
             }
             for job in jobs
         ]

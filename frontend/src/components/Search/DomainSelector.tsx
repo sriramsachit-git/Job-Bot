@@ -13,21 +13,47 @@ interface DomainSelectorProps {
       maxYoe: number;
       remoteOnly: boolean;
       locations: string[];
+      numResults: number;
+      maxExtractionBatch: number | '';
     };
   };
   onChange: (config: any) => void;
 }
 
 const DEFAULT_DOMAINS = [
+  'ashbyhq.com',
   'greenhouse.io',
   'lever.co',
-  'ashbyhq.com',
-  'myworkdayjobs.com',
-  'icims.com',
-  'smartrecruiters.com',
-  'jobvite.com',
+  'pinpointhq.com',
+  'jobs.workable.com',
+  'breezy.hr',
   'wellfound.com',
+  'workatastartup.com',
+  'oraclecloud.com',
+  'myworkdayjobs.com',
+  'recruitee.com',
+  'rippling.com',
+  'rippling-ats.com',
+  'jobs.gusto.com',
+  'careerpuck.com',
+  'teamtailor.com',
+  'jobs.smartrecruiters.com',
+  'jobappnetwork.com',
+  'homerun.co',
+  'gem.com',
+  'trakstar.com',
+  'catsone.com',
+  'applytojob.com',
+  'jobvite.com',
+  'icims.com',
+  'dover.io',
+  'notion.site',
   'builtin.com',
+  'workforcenow.adp.com',
+  'myjobs.adp.com',
+  'trinethire.com',
+  'recruiting.paylocity.com',
+  'keka.com',
 ];
 
 export default function DomainSelector({ config, onChange }: DomainSelectorProps) {
@@ -161,6 +187,63 @@ export default function DomainSelector({ config, onChange }: DomainSelectorProps
               }
               className="mt-2"
             />
+          </div>
+
+          {/* Execution limits (customisable at run time) */}
+          <div className="border-t pt-4 mt-4 space-y-4">
+            <p className="text-sm font-medium text-muted-foreground">
+              Search execution limits
+            </p>
+            <div>
+              <Label htmlFor="num-results">
+                Max search results per query (1–100)
+              </Label>
+              <Input
+                id="num-results"
+                type="number"
+                min={1}
+                max={100}
+                value={config.filters.numResults ?? 100}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  onChange({
+                    ...config,
+                    filters: {
+                      ...config.filters,
+                      numResults: Number.isNaN(v) ? 100 : Math.min(100, Math.max(1, v)),
+                    },
+                  });
+                }}
+                className="mt-2"
+              />
+            </div>
+            <div>
+              <Label htmlFor="max-extraction">
+                Max URLs to extract per run (leave empty for no limit)
+              </Label>
+              <Input
+                id="max-extraction"
+                type="number"
+                min={1}
+                placeholder="No limit"
+                value={config.filters.maxExtractionBatch === '' ? '' : config.filters.maxExtractionBatch}
+                onChange={(e) => {
+                  const raw = e.target.value.trim();
+                  const v = raw === '' ? '' : parseInt(raw, 10);
+                  onChange({
+                    ...config,
+                    filters: {
+                      ...config.filters,
+                      maxExtractionBatch:
+                        v === '' || Number.isNaN(v as number)
+                          ? ''
+                          : Math.max(1, v as number),
+                    },
+                  });
+                }}
+                className="mt-2"
+              />
+            </div>
           </div>
         </CardContent>
       </Card>

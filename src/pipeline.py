@@ -63,12 +63,13 @@ class JobSearchPipeline:
         self,
         keywords: List[str],
         sites: Optional[List[str]] = None,
-        num_results: int = 50,
+        num_results: int = 100,
         date_restrict: str = "d1",
         min_score: int = 30,
         per_site: Optional[int] = None,
         comprehensive: bool = False,
-        progress_callback: Optional[Callable[[str, int, Optional[Dict[str, Any]]], None]] = None
+        progress_callback: Optional[Callable[[str, int, Optional[Dict[str, Any]]], None]] = None,
+        filters: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Run the complete job search pipeline.
@@ -76,15 +77,22 @@ class JobSearchPipeline:
         Args:
             keywords: Job title keywords to search
             sites: Job board sites to search (default: DEFAULT_JOB_SITES)
-            num_results: Maximum search results
+            num_results: Maximum search results (Google API max 100)
             date_restrict: Date filter ("d1"=day, "w1"=week, "m1"=month)
             min_score: Minimum relevance score to save
             per_site: If set, search each site individually with N results per site
             comprehensive: If True, search each keyword × each site (matrix search)
+            filters: Optional dict from API (max_yoe, max_extraction_batch, etc.)
             
         Returns:
             Summary dict with pipeline statistics
         """
+        filters = filters or {}
+        # Apply API filters to pre-filter and job filter
+        effective_max_yoe = filters.get("max_yoe") if filters.get("max_yoe") is not None else USER_PROFILE.get("max_yoe", 5)
+        self.pre_filter.max_yoe = effective_max_yoe
+        self.filter.max_yoe = effective_max_yoe
+
         # Initialize usage tracker
         run_type = "comprehensive" if comprehensive else ("per_site" if per_site else "standard")
         self.usage_tracker = UsageTracker(run_type=run_type)
@@ -99,7 +107,10 @@ class JobSearchPipeline:
             "saved": 0,
             "skipped": 0,
             "started_at": datetime.now().isoformat(),
-            "new_jobs": []
+            "new_jobs": [],
+            # Diagnostics for UI: what was filtered out / failed extraction
+            "pre_filtered_jobs": [],
+            "unextracted_jobs": [],
         }
         
         try:
@@ -223,8 +234,9 @@ class JobSearchPipeline:
             if progress_callback:
                 progress_callback("extracting", 40, {"message": "Extracting job content..."})
             urls = [r["link"] for r in filtered_results]
-            # Limit batch size to prevent overwhelming the system
-            max_extraction_batch = min(50, len(urls))  # Process max 50 at a time
+            # Max URLs to extract: from filters, or cap at 100
+            cap = filters.get("max_extraction_batch")
+            max_extraction_batch = min(cap, len(urls)) if cap is not None and cap > 0 else min(100, len(urls))
             extracted = self.extractor.extract_batch(
                 urls[:max_extraction_batch],
                 delay=1.0,
@@ -250,6 +262,13 @@ class JobSearchPipeline:
                 if not result["success"]:
                     # Use filtered_results instead of search_results
                     search_result = filtered_results[i] if i < len(filtered_results) else {}
+                    summary["unextracted_jobs"].append({
+                        "url": result["url"],
+                        "title": search_result.get("title"),
+                        "snippet": search_result.get("snippet"),
+                        "source_domain": self.extractor.get_domain(result["url"]),
+                        "error_message": result.get("error"),
+                    })
                     self.db.save_unextracted_job(
                         url=result["url"],
                         title=search_result.get("title"),
@@ -278,6 +297,14 @@ class JobSearchPipeline:
                     summary["pre_filter_reasons"][reason] = summary["pre_filter_reasons"].get(reason, 0) + 1
                     
                     search_result = next((r for r in filtered_results if r["link"] == item["url"]), {})
+                    summary["pre_filtered_jobs"].append({
+                        "url": item["url"],
+                        "title": search_result.get("title"),
+                        "snippet": search_result.get("snippet"),
+                        "source_domain": self.extractor.get_domain(item["url"]),
+                        "filter_reason": item.get("filter_reason"),
+                        "filter_details": item.get("filter_details"),
+                    })
                     self.db.save_pre_filtered_job(
                         url=item["url"],
                         title=search_result.get("title"),

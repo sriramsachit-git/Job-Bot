@@ -48,6 +48,9 @@ export const jobsApi = {
     min_score?: number;
     max_yoe?: number;
     remote?: boolean;
+    search?: string;
+    sort_by?: string;
+    sort_order?: 'asc' | 'desc';
     limit?: number;
     offset?: number;
   }): Promise<{ jobs: Job[]; total: number; page: number; pages: number; limit: number }> => {
@@ -79,6 +82,8 @@ export const searchApi = {
       max_yoe?: number;
       remote_only?: boolean;
       locations?: string[];
+      num_results?: number;
+      max_extraction_batch?: number;
     };
   }) => {
     const response = await api.post('/search/start', data);
@@ -92,6 +97,16 @@ export const searchApi = {
 
   getSearchResults: async (searchId: number) => {
     const response = await api.get(`/search/${searchId}/results`);
+    return response.data;
+  },
+
+  getPreFiltered: async (searchId: number) => {
+    const response = await api.get(`/search/${searchId}/prefiltered`);
+    return response.data;
+  },
+
+  getUnextracted: async (searchId: number) => {
+    const response = await api.get(`/search/${searchId}/unextracted`);
     return response.data;
   },
 

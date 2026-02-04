@@ -8,9 +8,12 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
+from sqlalchemy.dialects.sqlite import insert
 
 from app.models.search_session import SearchSession
 from app.models.job import Job
+from app.models.pre_filtered_job import PreFilteredJob
+from app.models.unextracted_job import UnextractedJob
 from app.services.job_service import JobService
 
 logger = logging.getLogger(__name__)
@@ -152,10 +155,12 @@ class AsyncSearchPipeline:
             return pipeline.run(
                 job_titles,
                 domains,
-                filters.get("num_results", 50),
+                filters.get("num_results", 100),
                 filters.get("date_restrict", "d1"),
                 filters.get("min_score", 30),
-                progress_callback=_thread_progress
+                progress_callback=_thread_progress,
+                filters=filters,
+                comprehensive=True,
             )
         
         # Run pipeline in thread pool
@@ -204,6 +209,51 @@ class AsyncSearchPipeline:
                         summary["async_skipped"] = skipped
             except Exception as e:
                 logger.error(f"Error saving jobs to async DB: {e}")
+
+        # Save pre-filtered + unextracted diagnostics to async DB (for UI)
+        try:
+            pre_filtered = summary.get("pre_filtered_jobs") or []
+            if pre_filtered:
+                await db.execute(
+                    insert(PreFilteredJob)
+                    .prefix_with("OR IGNORE")
+                    .values([
+                        {
+                            "url": it.get("url"),
+                            "title": it.get("title"),
+                            "snippet": it.get("snippet"),
+                            "source_domain": it.get("source_domain"),
+                            "filter_reason": it.get("filter_reason"),
+                            "filter_details": it.get("filter_details"),
+                            "raw_content_preview": None,
+                        }
+                        for it in pre_filtered
+                        if it.get("url")
+                    ])
+                )
+            unextracted = summary.get("unextracted_jobs") or []
+            if unextracted:
+                await db.execute(
+                    insert(UnextractedJob)
+                    .prefix_with("OR IGNORE")
+                    .values([
+                        {
+                            "url": it.get("url"),
+                            "title": it.get("title"),
+                            "snippet": it.get("snippet"),
+                            "source_domain": it.get("source_domain"),
+                            "methods_attempted": None,
+                            "error_message": it.get("error_message"),
+                            "retry_count": 0,
+                        }
+                        for it in unextracted
+                        if it.get("url")
+                    ])
+                )
+            if pre_filtered or unextracted:
+                await db.commit()
+        except Exception as e:
+            logger.error(f"Error saving diagnostics to async DB: {e}")
         
         return summary
     
